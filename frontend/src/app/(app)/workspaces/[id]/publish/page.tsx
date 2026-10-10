@@ -13,6 +13,7 @@ import { pushStatusMeta } from "@/lib/status";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, Mono, SectionTitle } from "@/components/ui/primitives";
 import { EmptyState } from "@/components/ui/states";
+import { HuggingFacePublish } from "@/components/publish/huggingface-publish";
 import { toast } from "@/components/ui/overlays";
 
 /** Checkpoint 2 — the researcher must explicitly approve before POST /runs/{id}/push. */
@@ -87,6 +88,8 @@ export default function PublishPage() {
           )}
         </Card>
       )}
+
+      <HuggingFacePublish runId={runId} />
     </div>
   );
 }

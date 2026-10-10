@@ -707,6 +707,43 @@ export interface HealSession {
   created_at: ISODate | null;
 }
 
+/* ── Hugging Face Hub publishing ── */
+
+export interface HfFile {
+  path: string;
+  size: number;
+  sha256: string;
+  kind: "model" | "metrics" | "config" | "requirements" | "code" | string;
+  required: boolean;
+}
+
+export interface HfPlan {
+  configured: boolean;
+  files: HfFile[];
+  excluded: { path: string; reason: string }[];
+  blockers: string[];
+  model_card: string;
+  suggested_repo: string;
+  total_bytes: number;
+}
+
+export interface HfPublication {
+  id: ID;
+  repo_name: string;
+  repo_id: string;
+  private: boolean;
+  status: "queued" | "uploading" | "succeeded" | "failed";
+  stage: string;
+  files_done: number;
+  files_total: number;
+  bytes_done: number;
+  bytes_total: number;
+  repo_url: string;
+  commit_url: string;
+  error: string;
+  created_at: ISODate | null;
+}
+
 export interface LogChunk {
   content: string;
   offset: number;

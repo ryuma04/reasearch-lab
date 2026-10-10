@@ -101,6 +101,9 @@ export const ENDPOINTS = {
   cancelExecution: e("cancelExecution", "POST", "/sandbox/executions/{id}/cancel", "documented"),
   startHeal: e("startHeal", "POST", "/runs/{id}/sandbox/heal", "documented"),
   listHeal: e("listHeal", "GET", "/runs/{id}/sandbox/heal", "documented"),
+  hfPreview: e("hfPreview", "GET", "/runs/{id}/huggingface/preview", "documented"),
+  hfPublish: e("hfPublish", "POST", "/runs/{id}/huggingface", "documented"),
+  hfList: e("hfList", "GET", "/runs/{id}/huggingface", "documented"),
 
   // Team & memory
   agents: e("agents", "GET", "/agents", "documented"),

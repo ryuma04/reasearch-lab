@@ -473,6 +473,43 @@ export function toSandboxHealth(raw: unknown): T.SandboxHealth {
 const HEAL_STATUS = new Set(["queued", "running", "fixed", "failed", "error"]);
 const REPAIR_STATUS = new Set(["running", "fixed", "still_failing", "tests_failed", "no_fix", "sandbox_error"]);
 
+export function toHfPlan(raw: unknown): T.HfPlan {
+  const p = isObj(raw) ? raw : {};
+  return {
+    configured: p.configured === true,
+    files: arr(p.files).filter(isObj).map((f) => ({ path: String(f.path ?? ""), size: num(f.size) ?? 0, sha256: String(f.sha256 ?? ""),
+      kind: String(f.kind ?? ""), required: f.required === true })),
+    excluded: arr(p.excluded).filter(isObj).map((x) => ({ path: String(x.path ?? ""), reason: String(x.reason ?? "") })),
+    blockers: arr(p.blockers).map(String),
+    model_card: String(p.model_card ?? ""),
+    suggested_repo: String(p.suggested_repo ?? ""),
+    total_bytes: num(p.total_bytes) ?? 0,
+  };
+}
+
+const HF_STATUS = new Set(["queued", "uploading", "succeeded", "failed"]);
+
+export function toHfPublication(raw: unknown): T.HfPublication {
+  const p = isObj(raw) ? raw : {};
+  return {
+    id: id(p.id),
+    repo_name: String(p.repo_name ?? ""),
+    repo_id: String(p.repo_id ?? ""),
+    private: p.private === true,
+    status: (HF_STATUS.has(String(p.status)) ? p.status : "failed") as T.HfPublication["status"],
+    stage: String(p.stage ?? ""),
+    files_done: num(p.files_done) ?? 0,
+    files_total: num(p.files_total) ?? 0,
+    bytes_done: num(p.bytes_done) ?? 0,
+    bytes_total: num(p.bytes_total) ?? 0,
+    // A link only exists once the Hub confirmed the upload.
+    repo_url: p.status === "succeeded" ? String(p.repo_url ?? "") : "",
+    commit_url: p.status === "succeeded" ? String(p.commit_url ?? "") : "",
+    error: String(p.error ?? ""),
+    created_at: s(p.created_at),
+  };
+}
+
 export function toHealSession(raw: unknown): T.HealSession {
   const h = isObj(raw) ? raw : {};
   return {

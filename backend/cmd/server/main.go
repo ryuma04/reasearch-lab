@@ -19,6 +19,7 @@ import (
 	"github.com/ryuma04/tapu-sena/backend/internal/config"
 	"github.com/ryuma04/tapu-sena/backend/internal/explorer"
 	"github.com/ryuma04/tapu-sena/backend/internal/githubpush"
+	"github.com/ryuma04/tapu-sena/backend/internal/hfpublish"
 	"github.com/ryuma04/tapu-sena/backend/internal/httpx"
 	"github.com/ryuma04/tapu-sena/backend/internal/proof"
 	"github.com/ryuma04/tapu-sena/backend/internal/ratelimit"
@@ -151,6 +152,8 @@ func run() error {
 		r.Post("/runs/{id}/explorer/ideas", h(explorerSvc.AddIdea))
 		// Code sandbox: save files, run experiments, logs, cancel, artifacts (Docker SDK).
 		sbx.Routes(r)
+		// Hugging Face Hub publishing (upload runs in the agent worker with the official client).
+		hfpublish.New(cfg, st, b).Routes(r)
 
 		r.Get("/runs/{id}/tests", h(runSvc.Tests))
 		r.Get("/runs/{id}/memory", h(runSvc.RunMemory))

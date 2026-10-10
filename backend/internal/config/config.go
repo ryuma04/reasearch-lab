@@ -57,6 +57,9 @@ type Config struct {
 	N8NWebhookURL      string
 	PushDirectFallback bool
 	GitleaksBin        string
+
+	// HFToken is only checked for presence here (the agent worker uploads with it); never logged or sent.
+	HFToken string
 }
 
 func (c *Config) GitHubConfigured() bool { return c.GitHubClientID != "" && c.GitHubClientSecret != "" }
@@ -108,6 +111,7 @@ func Load() (*Config, error) {
 		N8NWebhookURL:      get("N8N_WEBHOOK_URL", ""),
 		PushDirectFallback: getBool("PUSH_DIRECT_FALLBACK", true),
 		GitleaksBin:        get("GITLEAKS_BIN", "gitleaks"),
+		HFToken:            get("HF_TOKEN", ""),
 	}
 
 	// A relative DATA_DIR is relative to the .env file, so api and agents agree.

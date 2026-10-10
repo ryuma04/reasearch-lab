@@ -64,6 +64,9 @@ class Settings:
     arina_reasoning_effort: str = "low"
     arina_token_budget: int = 800_000
 
+    # Hugging Face Hub publishing (official huggingface_hub client). Never logged.
+    hf_token: str = ""
+
 
 def _keys(list_var: str, single_var: str) -> tuple:
     """Several API keys (comma separated) for rotation; falls back to the single-key variable."""
@@ -108,6 +111,7 @@ def load() -> Settings:
         arina_max_output_tokens=int(_get("ARINA_MAX_OUTPUT_TOKENS", "2500")),
         arina_reasoning_effort=_get("ARINA_REASONING_EFFORT", "low"),
         arina_token_budget=int(_get("ARINA_TOKEN_BUDGET", "800000")),
+        hf_token=_get("HF_TOKEN"),
     )
 
 

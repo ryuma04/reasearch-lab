@@ -15,6 +15,12 @@
     },
     { "name": "web", "runtimeExecutable": "npm", "runtimeArgs": ["--prefix", "frontend", "run", "dev"], "port": 3000 },
     {
+      "name": "api-alt",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd backend && go build -o bin\\api-alt.exe ./cmd/server && set API_ADDR=:8090&& set PUBLIC_API_URL=http://localhost:8090&& set FRONTEND_URL=http://localhost:3100&& bin\\api-alt.exe"],
+      "port": 8090
+    },
+    {
       "name": "web-alt",
       "runtimeExecutable": "cmd",
       "runtimeArgs": ["/c", "set NEXT_PUBLIC_API_BASE_URL=http://localhost:8090&& set NEXT_PUBLIC_APP_ORIGIN=http://localhost:3100&& npm --prefix frontend run dev -- -p 3100"],

@@ -152,6 +152,17 @@ export const sandboxApi = {
     unwrapList<unknown>(await request(ENDPOINTS.listHeal, { params: { id: runId }, signal }), "sessions").map(A.toHealSession),
 };
 
+/* ── Hugging Face Hub publishing (uploads happen on the server; the token never reaches the browser) ── */
+
+export const hfApi = {
+  preview: async (runId: string, repo: string, includeCode: boolean, signal?: AbortSignal) =>
+    A.toHfPlan(await request(ENDPOINTS.hfPreview, { params: { id: runId }, query: { repo, include_code: includeCode ? 1 : undefined }, signal })),
+  publish: async (runId: string, body: { repo: string; private: boolean; include_code: boolean }) =>
+    A.toHfPublication(await request(ENDPOINTS.hfPublish, { params: { id: runId }, body: { ...body, confirm: true } })),
+  list: async (runId: string, signal?: AbortSignal) =>
+    unwrapList<unknown>(await request(ENDPOINTS.hfList, { params: { id: runId }, signal }), "publications").map(A.toHfPublication),
+};
+
 /* ── Agents & memory ── */
 
 export const teamApi = {

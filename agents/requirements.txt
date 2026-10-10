@@ -12,3 +12,4 @@ pytest==8.4.2
 # Optional, better quality (install with requirements-extra.txt):
 #   fastembed  -> BGE embeddings for Lab Memory (falls back to hashing embeddings)
 #   docling    -> structured PDF reading (falls back to PyMuPDF)
+huggingface_hub==0.36.2

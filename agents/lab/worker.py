@@ -112,6 +112,9 @@ class Worker:
                 from . import healer
                 with self._lock(run_id):
                     healer.run_session(run_id, int(job["session_id"]))
+            elif typ == "hf_publish":  # Publish to Hugging Face
+                from . import hfpublish
+                hfpublish.publish(int(job["publication_id"]))
             elif typ == "whatif":
                 self._guard(run_id, lambda: whatif.run_question(run_id, job["question_id"], job["question"]), main=False)
             else:
