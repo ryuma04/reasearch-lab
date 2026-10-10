@@ -9,3 +9,8 @@ venv/
 .pytest_cache/
 node_modules/
 .DS_Store
+
+# sandbox test data and local builds
+backend/sandbox-testdata/
+backend/bin/
+frontend/.next-*/

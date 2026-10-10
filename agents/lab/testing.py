@@ -26,7 +26,8 @@ METRICS_PATH = os.path.join(HERE, "..", "results", "metrics.json")
 def _metrics():
     if not os.path.exists(METRICS_PATH):
         pytest.skip("results/metrics.json not produced yet")
-    return json.load(open(METRICS_PATH))
+    m = json.load(open(METRICS_PATH))
+    return m["metrics"] if isinstance(m.get("metrics"), dict) else m  # structured or legacy flat form
 
 
 @pytest.mark.parametrize("claim", CLAIMS, ids=[c["metric_name"] for c in CLAIMS])
@@ -50,6 +51,7 @@ HERE = os.path.dirname(__file__)
 
 def test_metrics_are_finite_numbers():
     m = json.load(open(os.path.join(HERE, "..", "results", "metrics.json")))
+    m = m["metrics"] if isinstance(m.get("metrics"), dict) else m
     assert m, "metrics.json is empty"
     for k, v in m.items():
         if isinstance(v, (int, float)):

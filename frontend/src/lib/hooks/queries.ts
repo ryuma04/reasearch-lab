@@ -2,7 +2,41 @@
 
 import { useQuery, type UseQueryOptions } from "@tanstack/react-query";
 import { isApiError } from "@/lib/api/errors";
-import { authApi, githubApi, memoryApi, runApi, shareApi, teamApi, workspaceApi } from "@/lib/api/services";
+import { authApi, githubApi, memoryApi, runApi, sandboxApi, shareApi, teamApi, workspaceApi } from "@/lib/api/services";
+import type { SandboxExecution } from "@/lib/api/types";
+
+const isLive = (e?: SandboxExecution | null) => e?.status === "running" || e?.status === "queued";
+
+/** Docker availability and the limits the backend will apply. */
+export const useSandboxHealth = () =>
+  useQuery({ queryKey: qk.sandboxStatus, queryFn: ({ signal }) => sandboxApi.status(signal), refetchInterval: 30_000 });
+
+/** Every sandbox attempt of a run (agent and researcher); polls while one is running. */
+export const useExecutions = (runId: string | null) =>
+  useQuery({
+    queryKey: qk.executions(runId ?? ""),
+    queryFn: ({ signal }) => sandboxApi.list(runId!, signal),
+    enabled: !!runId,
+    refetchInterval: (q) => (q.state.data?.some(isLive) ? 2000 : 15_000),
+  });
+
+/** Self-Healing Debugger sessions with every attempt; polls while one is in progress. */
+export const useHealSessions = (runId: string | null) =>
+  useQuery({
+    queryKey: ["run", runId ?? "", "sandbox", "heal"] as const,
+    queryFn: ({ signal }) => sandboxApi.healSessions(runId!, signal),
+    enabled: !!runId,
+    refetchInterval: (q) => (q.state.data?.some((s) => s.status === "queued" || s.status === "running") ? 1500 : false),
+  });
+
+/** One execution's real status, metrics and artifacts; polls every second while it runs. */
+export const useExecution = (execId: string | null) =>
+  useQuery({
+    queryKey: qk.execution(execId ?? ""),
+    queryFn: ({ signal }) => sandboxApi.get(execId!, signal),
+    enabled: !!execId,
+    refetchInterval: (q) => (isLive(q.state.data) || !q.state.data ? 1000 : false),
+  });
 
 /** Centralised query keys so mutations can invalidate precisely. */
 export const qk = {
@@ -26,6 +60,9 @@ export const qk = {
   runMemory: (id: string) => ["run", id, "memory"] as const,
   briefing: (id: string) => ["run", id, "briefing"] as const,
   pushStatus: (id: string) => ["run", id, "push"] as const,
+  executions: (id: string) => ["run", id, "sandbox", "executions"] as const,
+  execution: (execId: string) => ["sandbox", "execution", execId] as const,
+  sandboxStatus: ["sandbox", "status"] as const,
   agents: ["agents"] as const,
   memorySearch: (q: string) => ["memory", "search", q] as const,
   shared: (t: string) => ["share", t] as const,

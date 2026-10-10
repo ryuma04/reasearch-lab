@@ -81,6 +81,18 @@ export const ENDPOINTS = {
   voiceText: e("voiceText", "POST", "/voice/text", "documented"),
   voiceCommand: e("voiceCommand", "POST", "/voice/command", "documented"),
 
+  // Code sandbox (Docker, controlled by the Go backend)
+  sandboxStatus: e("sandboxStatus", "GET", "/sandbox/status", "documented"),
+  saveFile: e("saveFile", "PUT", "/runs/{id}/file", "documented"),
+  artifact: e("artifact", "GET", "/runs/{id}/artifact", "documented"),
+  startExecution: e("startExecution", "POST", "/runs/{id}/sandbox/executions", "documented"),
+  listExecutions: e("listExecutions", "GET", "/runs/{id}/sandbox/executions", "documented"),
+  getExecution: e("getExecution", "GET", "/sandbox/executions/{id}", "documented"),
+  executionLogs: e("executionLogs", "GET", "/sandbox/executions/{id}/logs", "documented"),
+  cancelExecution: e("cancelExecution", "POST", "/sandbox/executions/{id}/cancel", "documented"),
+  startHeal: e("startHeal", "POST", "/runs/{id}/sandbox/heal", "documented"),
+  listHeal: e("listHeal", "GET", "/runs/{id}/sandbox/heal", "documented"),
+
   // Team & memory
   agents: e("agents", "GET", "/agents", "documented"),
   memorySearch: e("memorySearch", "GET", "/memory/search", "documented"),

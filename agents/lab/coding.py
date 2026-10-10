@@ -4,13 +4,21 @@ sources, the environment fix for version conflicts and the Compute Budget Planne
 Contract for every generated project (also given to the AI writer):
   configs/config.yaml   every setting (written by us from the settings table)
   src/train.py          reads the config, trains/evaluates, prints "name: value" lines and
-                        writes results/metrics.json (flat {name: number}); honours
-                        LAB_BUDGET_FRACTION (scale epochs) and LAB_MAX_STEPS (test drive ->
+                        writes results/metrics.json as
+                          {"schema_version": 1, "metrics": {name: finite number, ...},
+                           "artifacts": [{"path": "models/<file>", "kind": "model", "format": "torch"}]}
+                        (every metric a real measured number: no NaN/Infinity/null/strings);
+                        honours LAB_BUDGET_FRACTION (scale epochs) and LAB_MAX_STEPS (test drive ->
                         results/timing.json with estimated_seconds)
+  models/               trained model files (torch .pt/.pth, joblib, pickle, or xgboost .json);
+                        each is loaded in a fresh container before the run counts as successful
   src/download_data.py  (optional) downloads data into data/ during the install step
   requirements.txt      package names; the sandbox already has torch (CPU), torchvision, numpy, pandas,
                         scikit-learn, xgboost, scipy, matplotlib, pytest, pyyaml - do not pin those
                         (exact versions are written automatically after install)
+  Sandbox rules: no network while training or testing; the project is read-only except
+  results/, models/ and data/ (use /tmp for scratch files); runs as a normal user with CPU,
+  memory, process and time limits.
 """
 from __future__ import annotations
 
@@ -18,7 +26,7 @@ import json
 import logging
 import re
 
-from . import api, bus, llm, memory, recipes, steps
+from . import api, bus, db, llm, memory, recipes, steps
 from .config import settings as cfg
 from .observer import edge, node
 from .project import apply_ops, load_settings, pdir, record_settings, write_config, write_files
@@ -153,7 +161,11 @@ def write_code(run_id: int, brief: dict) -> dict:
             if unpinned:
                 bus.emit(run_id, slug, "progress", "Using the sandbox's pre-installed versions of: " + ", ".join(unpinned),
                          "Pinning a different version would download gigabytes (e.g. the CUDA build of PyTorch)")
-        written = write_files(root, files)
+        written = write_files(root, files, editable_only=True)
+        skipped = sorted(set(files) - set(written))
+        if skipped:
+            bus.emit(run_id, slug, "progress", "Ignored files outside src/, configs/, tests/ and requirements.txt: "
+                     + ", ".join(skipped[:5]), "The code writer may not write results, logs or files outside the project")
         write_config(root, load_settings(run_id))
         written.append("configs/config.yaml")
         nodes = [node(f"file:{f}", "file", f, "done") for f in written if f.endswith((".py", ".R", ".yaml"))]
@@ -271,9 +283,18 @@ def test_drive(run_id: int, budget: str) -> dict:
     return out
 
 
-def execute(run_id: int, timeout: int, env: dict | None = None) -> api.ExecResult:
+def required_metrics(run_id: int) -> list[str]:
+    """Metric names the paper's claims need; the sandbox rejects a metrics.json without them."""
+    rows = db.q("""SELECT DISTINCT c.metric_name FROM claims c JOIN papers p ON p.id=c.paper_id
+                   JOIN runs r ON r.workspace_id=p.workspace_id WHERE r.id=%s AND c.metric_name <> ''""", (run_id,))
+    return sorted(r["metric_name"] for r in rows)
+
+
+def execute(run_id: int, timeout: int, env: dict | None = None, attempt: int = 0,
+            required: list[str] | None = None) -> api.ExecResult:
     slug = "coding.writer"
-    return api.sandbox_exec(run_id, "execute", "python src/train.py", timeout, slug, env=env or {})
+    return api.sandbox_exec(run_id, "execute", "python src/train.py", timeout, slug, env=env or {},
+                            attempt=attempt, required_metrics=required)
 
 
 # ---------- Debugger (after running) ----------
@@ -294,31 +315,47 @@ def heuristic_fix(log_tail: str) -> tuple[list[dict], str] | None:
     return None
 
 
-def _cuda_to_cpu(run_id: int) -> list[dict]:
+def _cuda_to_cpu_root(root) -> list[dict]:
     ops = []
-    for p in (pdir(run_id) / "src").rglob("*.py"):
+    for p in (root / "src").rglob("*.py"):
         t = p.read_text(encoding="utf-8")
         new = re.sub(r"\.cuda\(\)", ".to('cpu')", t).replace("device='cuda'", "device='cpu'").replace('device="cuda"', 'device="cpu"')
         if new != t:
-            ops.append({"op": "write", "path": p.relative_to(pdir(run_id)).as_posix(), "content": new})
+            ops.append({"op": "write", "path": p.relative_to(root).as_posix(), "content": new})
     return ops
 
 
+def _cuda_to_cpu(run_id: int) -> list[dict]:
+    return _cuda_to_cpu_root(pdir(run_id))
+
+
+def _expand_ops(root, ops: list[dict]) -> list[dict]:
+    out = []
+    for op in ops:
+        out += _cuda_to_cpu_root(root) if op.get("op") == "replace_all_cuda" else [op]
+    return out
+
+
 def llm_fix(run_id: int, log_tail: str, slug: str) -> tuple[list[dict], str] | None:
-    if not llm.available():
-        return None
+    """The agent pipeline's AI fix: the Self-Healing Debugger's cached, context-trimmed diagnosis
+    (Arina first), so the pipeline and the code sandbox share one implementation and one cache."""
+    from . import healer
     root = pdir(run_id)
-    files = {p.relative_to(root).as_posix(): p.read_text(encoding="utf-8", errors="ignore")[:8000]
-             for p in list((root / "src").rglob("*.py"))[:6]}
-    req = (root / "requirements.txt").read_text() if (root / "requirements.txt").exists() else ""
-    data, _ = llm.chat_json("planner", steps.instructions(slug) + "\nFind the cause of the error and fix it with minimal "
-        'changes. JSON: {"cause": "...", "ops": [{"op": "replace", "path": "...", "old": "exact text", "new": "..."} | '
-        '{"op": "write", "path": "...", "content": "..."} | {"op": "add_requirement", "value": "pkg==ver"}]}',
-        json.dumps({"error_log_tail": log_tail[-6000:], "requirements": req, "files": files,
-                    "researcher_instructions": bus.instructions(run_id, "coding")}), max_tokens=6000)
-    if isinstance(data, dict) and data.get("ops"):
-        return data["ops"], str(data.get("cause", "AI fix"))[:200]
-    return None
+    etype, msg, frames = healer.parse_traceback(log_tail)
+    failure = healer.Failure("exception", f"{etype}: {msg}" if etype else "error", log_tail[-healer.ERROR_CHARS:],
+                             etype, msg, frames)
+    extra = bus.instructions(run_id, "coding")
+    if extra:
+        failure.text = (failure.text + "\nResearcher says: " + " ".join(extra))[-healer.ERROR_CHARS:]
+    d = healer.ask_ai(root, failure)
+    return (d.ops, (d.cause or "AI fix")[:200]) if d else None
+
+
+def _requirements_hash(root) -> str:
+    import hashlib
+    req = root / "requirements.txt"
+    data = req.read_bytes() if req.is_file() and not req.is_symlink() else b""
+    return "sha256:" + hashlib.sha256(data).hexdigest()
 
 
 def ensure_installed(run_id: int, help_instruction: str = "", max_tries: int = 4) -> tuple[bool, str]:
@@ -327,15 +364,17 @@ def ensure_installed(run_id: int, help_instruction: str = "", max_tries: int = 4
     if (root / ".needs_install").exists():
         (root / ".needs_install").unlink()
         (root / ".installed").unlink(missing_ok=True)
-    if (root / ".installed").exists():
-        return True, ""
+    marker = root / ".installed"
+    if marker.exists() and marker.read_text() in ("ok", _requirements_hash(root)):
+        return True, ""  # unchanged since the last install (the researcher may edit it in the sandbox)
+    marker.unlink(missing_ok=True)
     reviewer = "coding.reviewer"
     tail = ""
     for attempt in range(1, max_tries + 1):
         bus.check_control(run_id)
         res = install(run_id, "coding.writer")
         if res.ok:
-            (root / ".installed").write_text("ok")
+            marker.write_text(_requirements_hash(root))
             (root / ".needs_install").unlink(missing_ok=True)
             return True, ""
         tail = res.log_tail
@@ -347,10 +386,14 @@ def ensure_installed(run_id: int, help_instruction: str = "", max_tries: int = 4
 
 
 def repair_and_run(run_id: int, timeout: int, env: dict | None = None,
-                   help_instruction: str = "") -> tuple[api.ExecResult | None, str]:
-    """write -> run -> read the error -> fix loop. Returns (successful result, '') or (None, last error)."""
+                   help_instruction: str = "", max_repairs: int | None = None) -> tuple[api.ExecResult | None, str]:
+    """write -> run -> read the error -> fix loop. Every run is a fresh sandbox container; the
+    Debugger gets the real error and source files; at most `max_repairs` automatic repairs
+    (MAX_REPAIR_ATTEMPTS, default 3). Returns (successful result, '') or (None, actionable message)."""
     reviewer = "coding.reviewer"
-    max_tries = cfg.max_repair_attempts
+    max_tries = cfg.max_repair_attempts if max_repairs is None else max_repairs
+    required = required_metrics(run_id)
+    attempts: list[dict] = []
     last_tail = ""
     if help_instruction:
         bus.emit(run_id, reviewer, "progress", f"Applying the researcher's help: {help_instruction}", "")
@@ -358,18 +401,43 @@ def repair_and_run(run_id: int, timeout: int, env: dict | None = None,
         bus.check_control(run_id)
         ok, tail = ensure_installed(run_id, help_instruction)
         if not ok:
-            return None, tail
-        res = execute(run_id, timeout, env)
+            return None, "Installing the requirements keeps failing. Check requirements.txt in the code sandbox.\n" + tail
+        res = execute(run_id, timeout, env, attempt=attempt, required=required)
+        attempts.append({"attempt": attempt, "exec_id": res.exec_id, "status": res.status or ("succeeded" if res.ok else "failed"),
+                         "error": (res.error or res.metrics_error)[:300]})
+        bus.emit(run_id, reviewer, "attempt_result",
+                 f"Attempt {attempt}: {attempts[-1]['status'].replace('_', ' ')}"
+                 + (f" ({attempts[-1]['error']})" if attempts[-1]["error"] else ""),
+                 "Each attempt runs in a fresh sandbox container", {"exec_id": res.exec_id, "attempt": attempt,
+                                                                   "status": attempts[-1]["status"]})
         if res.ok and res.metrics:
             return res, ""
-        last_tail = res.log_tail if not res.ok else (res.metrics_error or "the code ran but wrote no metrics.json")
+        if res.cancelled:
+            return None, "The researcher cancelled the run in the code sandbox. Edit the code or approve to run it again."
+        if res.status == "error":  # Docker down or image missing: not a code bug, do not 'repair' it
+            return None, f"The sandbox could not run the code: {res.error}"
+        last_tail = res.error_report() or "the code ran but wrote no results/metrics.json"
         if res.timed_out:
-            last_tail += "\n[the run hit its time limit]"
+            last_tail += "\n[the run hit its time limit of the compute budget]"
         if attempt > max_tries:
             break
         if not _fix(run_id, reviewer, last_tail, attempt, help_instruction):
             break
-    return None, last_tail
+    return None, retry_limit_message(attempts, max_tries, last_tail)
+
+
+def retry_limit_message(attempts: list[dict], max_repairs: int, last_error: str) -> str:
+    """What the researcher sees when the Debugger gives up: every attempt and what to do next."""
+    lines = [f"The code still fails after {len(attempts)} run(s) ({max_repairs} automatic repairs allowed)."]
+    for a in attempts:
+        lines.append(f"  attempt {a['attempt']} (execution #{a['exec_id']}): {a['status']}"
+                     + (f" - {a['error']}" if a["error"] else ""))
+    lines.append("Next step: open the Code sandbox tab, fix src/train.py (or requirements.txt) and press Run "
+                 "Experiment, or answer this checkpoint with an instruction for the Debugger (e.g. 'use a "
+                 "smaller batch size').")
+    lines.append("Last error:")
+    lines.append(last_error[-1500:])
+    return "\n".join(lines)
 
 
 def _fix(run_id: int, slug: str, log_tail: str, attempt: int, help_instruction: str) -> bool:

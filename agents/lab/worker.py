@@ -1,6 +1,6 @@
 """Job worker: consumes lab:jobs from Redis (pushed by the Go API) and runs them in threads.
 
-Job types: start_run, resume (after a checkpoint), retry, whatif.
+Job types: start_run, resume (after a checkpoint), retry, whatif, heal (Self-Healing Debugger).
 
 Delivery is at-least-once: a job is atomically moved from lab:jobs to lab:jobs:processing
 (BLMOVE) and removed only after it has been handled. Jobs left in the processing list by a
@@ -105,6 +105,10 @@ class Worker:
             if typ in ("start_run", "resume", "retry"):
                 with self._lock(run_id):  # one graph step at a time per run
                     self._graph_job(typ, run_id, job)
+            elif typ == "heal":  # Fix with AI in the code sandbox
+                from . import healer
+                with self._lock(run_id):
+                    healer.run_session(run_id, int(job["session_id"]))
             elif typ == "whatif":
                 self._guard(run_id, lambda: whatif.run_question(run_id, job["question_id"], job["question"]), main=False)
             else:

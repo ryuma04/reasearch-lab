@@ -184,6 +184,79 @@ def _gemini(model, key, system, user, json_mode, max_tokens, temperature) -> Res
     return Result(text=text, tokens=tokens, provider="gemini", model=model)
 
 
+# ---------- Arina AI (Elevate gateway): the Self-Healing Debugger's model ----------
+
+ARINA_MAX_REQUEST_BYTES = 48 * 1024  # gateway limit
+ARINA_USED_KEY = "lab:arina:tokens_used"
+
+
+class ArinaUnavailable(Exception):
+    """Not configured, over budget, request too large or the gateway failed."""
+
+
+def arina_available() -> bool:
+    return bool(settings.arina_api_key)
+
+
+def arina_tokens_used() -> int:
+    from . import bus
+    try:
+        return int(bus.r.get(ARINA_USED_KEY) or 0)
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def _arina_record(tokens: int) -> None:
+    from . import bus
+    try:
+        bus.r.incrby(ARINA_USED_KEY, int(tokens))
+    except Exception as e:  # noqa: BLE001
+        log.warning("could not record Arina token use: %s", e)
+
+
+def arina(system: str, user: str, *, max_output_tokens: int | None = None) -> Result:
+    """One Chat Completions call to the Elevate gateway (text only, no streaming). Refuses before
+    sending if the team budget would be exceeded or the request is over 48 KB."""
+    if not settings.arina_api_key:
+        raise ArinaUnavailable("ARINA_API_KEY is not set")
+    out = min(max_output_tokens or settings.arina_max_output_tokens, settings.arina_max_output_tokens)
+    model = settings.arina_model
+    body = {"model": model, "stream": False,
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
+    # DeepSeek takes max_tokens; the GPT models take max_completion_tokens (and only the default temperature).
+    body["max_tokens" if model.startswith("deepseek") else "max_completion_tokens"] = out
+    if model.startswith("gpt-5") and settings.arina_reasoning_effort:
+        body["reasoning_effort"] = settings.arina_reasoning_effort  # hidden reasoning also uses output tokens
+    raw = json.dumps(body).encode()
+    if len(raw) > ARINA_MAX_REQUEST_BYTES:
+        raise ArinaUnavailable(f"request is {len(raw)} bytes, over the gateway's 48 KB limit")
+    used = arina_tokens_used()
+    if used + len(raw) // 4 + out > settings.arina_token_budget:
+        raise ArinaUnavailable(f"Arina token budget reached ({used} of {settings.arina_token_budget} used)")
+    try:
+        headers = {"Authorization": f"Bearer {settings.arina_api_key}", "Content-Type": "application/json"}
+        resp = _http.post(settings.arina_base_url, content=raw, headers=headers)
+        if resp.status_code == 400 and "reasoning_effort" in body:  # gateway rejected the field: no tokens spent
+            body.pop("reasoning_effort")
+            raw = json.dumps(body).encode()
+            resp = _http.post(settings.arina_base_url, content=raw, headers=headers)
+        _check(resp)
+        d = resp.json()
+    except (RateLimited, RuntimeError, httpx.HTTPError, ValueError) as e:
+        raise ArinaUnavailable(f"Arina request failed: {e}") from e
+    choice = (d.get("choices") or [{}])[0]
+    text = re.sub(r"<think>.*?</think>", "", (choice.get("message") or {}).get("content") or "", flags=re.S).strip()
+    usage = d.get("usage") or {}
+    tokens = int(usage.get("total_tokens") or (len(raw) // 4 + len(text) // 4))
+    _arina_record(tokens)
+    acc = current_tokens.get()
+    if acc is not None:
+        acc[0] += tokens
+    if not text:
+        raise ArinaUnavailable(f"empty answer (finish_reason={choice.get('finish_reason')})")
+    return Result(text=text, tokens=tokens, provider="arina", model=model)
+
+
 def parse_json(text: str):
     if not text:
         return None

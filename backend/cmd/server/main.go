@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"syscall"
 	"time"
@@ -64,6 +63,7 @@ func run() error {
 	wsSvc := workspace.New(cfg, st)
 	runSvc := runs.New(cfg, st, b, agents)
 	sbx := sandbox.New(cfg, st, b)
+	sbx.Startup(ctx)
 	proofSvc := proof.New(st)
 	rl := ratelimit.New(b.Redis, cfg.RateLimits)
 	pushSvc := githubpush.New(cfg, st, b, authSvc)
@@ -76,7 +76,7 @@ func run() error {
 	r.Use(httpx.CSRF(auth.SessionCookie))
 	h := httpx.Handler
 
-	r.Get("/healthz", health(cfg, st, b, agents))
+	r.Get("/healthz", health(cfg, st, b, agents, sbx))
 	r.Get("/livez", func(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, http.StatusOK, map[string]bool{"ok": true})
 	})
@@ -138,6 +138,9 @@ func run() error {
 		r.Get("/metrics/{id}/proof", h(runSvc.MetricProof))
 		r.Get("/papers/{id}/pdf", h(runSvc.PaperPDF))
 
+		// Code sandbox: save files, run experiments, logs, cancel, artifacts (Docker SDK).
+		sbx.Routes(r)
+
 		r.Get("/runs/{id}/tests", h(runSvc.Tests))
 		r.Get("/runs/{id}/memory", h(runSvc.RunMemory))
 		r.Get("/agents", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, http.StatusOK, runs.AgentList) })
@@ -174,7 +177,7 @@ func run() error {
 
 // health reports every connection: database, Redis, agent service, Docker + sandbox image,
 // n8n, and which external credentials are configured.
-func health(cfg *config.Config, st *store.Store, b *bus.Bus, agents *agentsclient.Client) http.HandlerFunc {
+func health(cfg *config.Config, st *store.Store, b *bus.Bus, agents *agentsclient.Client, sbx *sandbox.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 		defer cancel()
@@ -193,13 +196,9 @@ func health(cfg *config.Config, st *store.Store, b *bus.Bus, agents *agentsclien
 			ah["ok"] = true
 			out["agents_service"] = ah
 		}
-		sb := map[string]any{"mode": cfg.SandboxMode, "ok": true}
-		if cfg.SandboxMode == "docker" {
-			sb["docker"] = sandbox.DockerAvailable(ctx)
-			sb["image"] = cfg.SandboxImagePython
-			sb["image_present"] = exec.CommandContext(ctx, "docker", "image", "inspect", cfg.SandboxImagePython).Run() == nil
-			sb["ok"] = sb["docker"] == true && sb["image_present"] == true
-		}
+		sb := sbx.Status(ctx)
+		sb["docker"] = sb["available"]
+		sb["ok"] = sb["available"] == true && sb["image_present"] == true
 		out["sandbox"] = sb
 		n8n := map[string]any{"configured": cfg.N8NWebhookURL != "", "direct_fallback": cfg.PushDirectFallback}
 		out["n8n"] = n8n

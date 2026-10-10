@@ -27,13 +27,44 @@ def pdir(run_id: int) -> Path:
     return p
 
 
-def write_files(root: Path, files: dict[str, str]) -> list[str]:
+_SEG = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.\-]{0,99}$")
+# What the Coding Agent and Debugger may write: source, configs, tests and requirements.txt.
+# Never results/ (numbers must come from executed code), logs/, models/ or anything outside.
+EDITABLE_TOP = ("src", "configs", "tests")
+
+
+def safe_rel(rel: str, editable_only: bool = False) -> str | None:
+    """A project-relative path, or None if it is absolute, escapes the project, uses odd names,
+    or (editable_only) is not a file the agents may change."""
+    rel = str(rel or "").replace("\\", "/").strip()
+    if rel.startswith("./"):
+        rel = rel[2:]
+    parts = rel.split("/")
+    if (not rel or rel.startswith("/") or ":" in rel or "\x00" in rel or len(parts) > 8
+            or any(not _SEG.match(p) or p.endswith(".") for p in parts)):
+        return None
+    if editable_only and not (rel == "requirements.txt" or (len(parts) > 1 and parts[0] in EDITABLE_TOP)):
+        return None
+    return rel
+
+
+def safe_target(root: Path, rel: str) -> Path | None:
+    """root/rel, refusing any existing symlink on the way (sandboxed code can create links)."""
+    cur = root
+    for part in rel.split("/"):
+        cur = cur / part
+        if cur.is_symlink():
+            return None
+    return cur
+
+
+def write_files(root: Path, files: dict[str, str], editable_only: bool = False) -> list[str]:
     written = []
     for rel, content in files.items():
-        rel = rel.replace("\\", "/").lstrip("/")
-        if ".." in Path(rel).parts:
+        rel = safe_rel(rel, editable_only)
+        p = safe_target(root, rel) if rel else None
+        if p is None:
             continue
-        p = root / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8", newline="\n")
         written.append(rel)
@@ -168,14 +199,14 @@ def apply_ops(run_id: int, ops: list[dict]) -> tuple[list[str], bool]:
                 done.append("relaxed version pins")
                 reinstall = True
         elif kind == "replace":
-            p = root / op["path"]
-            if p.exists() and op.get("old") and op["old"] in p.read_text(encoding="utf-8"):
+            rel = safe_rel(op.get("path", ""), editable_only=True)
+            p = safe_target(root, rel) if rel else None
+            if p is not None and p.is_file() and op.get("old") and op["old"] in p.read_text(encoding="utf-8"):
                 p.write_text(p.read_text(encoding="utf-8").replace(op["old"], op.get("new", "")), encoding="utf-8")
-                done.append(f"edited {op['path']}")
+                done.append(f"edited {rel}")
         elif kind == "write":
-            if ".." not in Path(op["path"]).parts:
-                write_files(root, {op["path"]: op.get("content", "")})
-                done.append(f"rewrote {op['path']}")
+            if write_files(root, {op.get("path", ""): op.get("content", "")}, editable_only=True):
+                done.append(f"rewrote {safe_rel(op['path'])}")
         elif kind == "set_config":
             set_config_values(run_id, {op["key"]: op["value"]}, op.get("source", "compute_change"), op.get("reason", "fix"))
             done.append(f"set {op['key']}={op['value']}")
@@ -184,7 +215,7 @@ def apply_ops(run_id: int, ops: list[dict]) -> tuple[list[str], bool]:
 
 # ---------- child runs ----------
 
-COPY_IGNORE = shutil.ignore_patterns(".git", "logs", "results", "__pycache__", ".pytest_cache")
+COPY_IGNORE = shutil.ignore_patterns(".git", "logs", "results", "models", "__pycache__", ".pytest_cache")
 
 
 def remove_tree(path: Path) -> None:
@@ -216,7 +247,8 @@ def create_child_run(parent_id: int, kind: str, branch: str) -> int:
     src = pdir(parent_id)
     dst = project_dir(parent["workspace_id"], child_id)
     remove_tree(dst)
-    shutil.copytree(src, dst, ignore=COPY_IGNORE)
+    # symlinks=True copies links as links: a link planted by sandboxed code is never followed to a host file.
+    shutil.copytree(src, dst, ignore=COPY_IGNORE, symlinks=True)
     for s in load_settings(parent_id):
         record_settings(child_id, [s])
     return child_id
