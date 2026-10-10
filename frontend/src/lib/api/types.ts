@@ -845,3 +845,28 @@ export interface ApiErrorBody {
   code?: string;
   fields?: Record<string, string>;
 }
+
+/* ── Better-resource recommendations (GET /runs/{id}/resources) ── */
+export type ResourceDecisionKind = "accept" | "reject" | "keep_original" | "supplement";
+export interface ResourceRec {
+  id: string;
+  kind: "dataset" | "repository";
+  source: string;
+  url: string;
+  name: string;
+  original: { name?: string | null; url?: string | null } | null;
+  category: "better_alternative" | "relevant_alternative" | "possible_needs_validation" | "not_better" | "insufficient_evidence" | "inaccessible";
+  action: "replace" | "supplement" | "keep_original";
+  score: number | null;
+  confidence: string;
+  summary: string;
+  advantages: string[];
+  limitations: string[];
+  evidence: string[];
+  decision: { rec_id: string; decision: ResourceDecisionKind; note: string; updated_at: string } | null;
+}
+export interface ResourcesResponse {
+  discovery: { status: "completed" | "partial" | "failed" | "not_run"; note: string; providers: { name: string; status: string }[] };
+  recommendations: ResourceRec[];
+  originals: { datasets: { name?: string; url?: string }[]; repositories: { name?: string; url?: string }[] };
+}

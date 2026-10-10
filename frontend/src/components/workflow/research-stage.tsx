@@ -4,7 +4,7 @@ import * as React from "react";
 import { ArrowRight, FilePdf, Quotes, X } from "@phosphor-icons/react";
 import type { Claim, MapNode, ResearchMap, RunEvent } from "@/lib/api/types";
 import { workspaceApi } from "@/lib/api/services";
-import { useBrief, useResearchMap } from "@/lib/hooks/queries";
+import { useBrief, useResearchMap, useResources } from "@/lib/hooks/queries";
 import { metaFacts, sourceKindOf } from "@/lib/sources";
 import { rawType, type StageKey } from "@/lib/workflow/state";
 import { Button } from "@/components/ui/button";
@@ -88,12 +88,14 @@ function NodeDetail({ node, map, claim, onSelect, onClose }: { node: MapNode; ma
 
 export function ResearchGraphPanel({ runId, map }: { runId: string; map: ResearchMap }) {
   const brief = useBrief(runId);
+  const resources = useResources(runId);
+  const decisions = Object.fromEntries((resources.data?.recommendations ?? []).filter((r) => r.decision).map((r) => [r.id, r.decision!.decision]));
   const [selId, setSelId] = React.useState<string | null>(null);
   const sel = selId ? map.nodes.find((n) => n.id === selId) ?? null : null;
   const claim = sel?.kind === "claim" ? brief.data?.claims.find((c) => sel.label.startsWith(c.description.slice(0, 40))) : undefined;
   return (
     <div className="grid gap-4 2xl:grid-cols-[1fr_340px]">
-      <ResearchMapView map={map} onSelect={(n) => setSelId(n.id)} selected={selId} />
+      <ResearchMapView map={map} onSelect={(n) => setSelId(n.id)} selected={selId} decisions={decisions} />
       <Card variant="bento" className="h-fit p-4">
         {sel ? <NodeDetail node={sel} map={map} claim={claim} onSelect={setSelId} onClose={() => setSelId(null)} /> : (
           <div className="space-y-2 text-sm"><p className="font-display text-base font-semibold">Evidence</p>

@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useParams } from "next/navigation";
 import type { MapNode } from "@/lib/api/types";
-import { useBrief, useResearchMap } from "@/lib/hooks/queries";
+import { useBrief, useResearchMap, useResources } from "@/lib/hooks/queries";
 import { useRunStream } from "@/lib/hooks/use-run-stream";
 import { useSelectedRun } from "@/components/run/workspace-header";
 import { CheckpointPanel } from "@/components/run/board";
@@ -16,6 +16,8 @@ export default function MapPage() {
   const { id } = useParams<{ id: string }>();
   const { runId } = useSelectedRun(id);
   const map = useResearchMap(runId);
+  const resources = useResources(runId);
+  const decisions = Object.fromEntries((resources.data?.recommendations ?? []).filter((r) => r.decision).map((r) => [r.id, r.decision!.decision]));
   const brief = useBrief(runId);
   const s = useRunStream(runId ? { runId } : null);
   const [sel, setSel] = React.useState<MapNode | null>(null);
@@ -33,7 +35,7 @@ export default function MapPage() {
       <div className="space-y-3">
         <MapLegend />
         <QueryView query={map} feature="Research map" skeleton={<Skeleton className="h-[68vh]" />} isEmpty={(m) => !m.nodes.length} empty={<EmptyState title="Map is empty" body="The Observer adds cards as the agents report what they found and made." />}>
-          {(m) => <ResearchMapView map={m} onSelect={setSel} selected={sel?.id} />}
+          {(m) => <ResearchMapView map={m} onSelect={setSel} selected={sel?.id} decisions={decisions} />}
         </QueryView>
       </div>
       <div className="grid gap-5 lg:grid-cols-[1fr_1.2fr]">

@@ -38,6 +38,25 @@ export const githubApi = {
   disconnect: () => request<unknown>(ENDPOINTS.disconnectGithub),
 };
 
+/* ── Better-resource recommendations ── */
+
+export const resourceApi = {
+  get: async (runId: string, signal?: AbortSignal): Promise<T.ResourcesResponse> => {
+    const r = (await request(ENDPOINTS.resources, { params: { id: runId }, signal })) as Partial<T.ResourcesResponse> | undefined;
+    return {
+      discovery: { status: r?.discovery?.status ?? "not_run", note: r?.discovery?.note ?? "", providers: r?.discovery?.providers ?? [] },
+      recommendations: (r?.recommendations ?? []).map((x) => ({ ...x, advantages: x.advantages ?? [], limitations: x.limitations ?? [], evidence: x.evidence ?? [], decision: x.decision ?? null })),
+      originals: { datasets: r?.originals?.datasets ?? [], repositories: r?.originals?.repositories ?? [] },
+    };
+  },
+  decide: async (runId: string, recId: string, decision: T.ResourceDecisionKind): Promise<void> => {
+    await request<unknown>(ENDPOINTS.setResourceDecision, { params: { id: runId, recId }, body: { decision } });
+  },
+  clear: async (runId: string, recId: string): Promise<void> => {
+    await request<void>(ENDPOINTS.clearResourceDecision, { params: { id: runId, recId } });
+  },
+};
+
 /* ── Workspaces ── */
 
 export const workspaceApi = {

@@ -16,7 +16,7 @@ from pathlib import Path
 
 import httpx
 
-from . import bus, db, llm, recipes, sources as code_sources
+from . import bus, db, llm, recipes, resources, sources as code_sources
 from .config import settings as cfg
 from .observer import edge, node
 from .project import pdir
@@ -457,6 +457,9 @@ def write_brief(run_id: int, workspace_id: int, papers_info: list[dict], sources
             md.append("**Missing Details List** (not stated in the paper)\n\n" + "\n".join(f"- {m}" for m in info["missing_details"]) + "\n")
         if info.get("note"):
             md.append(f"> {info['note']}\n")
+    # Better-resource recommendations: part of research completion, so they exist before the plan is approved.
+    note = (db.q1("SELECT note FROM workspaces WHERE id=%s", (workspace_id,)) or {}).get("note", "")
+    sources["resources"] = resources.build(brief, sources, sources.get("code_assessment"), note or "")
     md.append("## Sources found\n")
     for r in sources["repositories"]:
         md.append(f"- Code: {r.get('name') or r['url']} ({'official' if r.get('official') else 'not confirmed official'}, licence {r.get('licence', '?')})")
@@ -465,6 +468,10 @@ def write_brief(run_id: int, workspace_id: int, papers_info: list[dict], sources
     for p in sources["related_papers"]:
         md.append(f"- Related newer paper: {p['title']} ({p.get('year')})")
     md.append(f"\n## Recommendation\n\n{sources['recommendation']}\n")
+    res = sources["resources"]
+    md.append(f"\n## Better-resource review ({res['status']})\n\n{res['note']}\n")
+    for r in res["recommendations"]:
+        md.append(f"- [{r['category'].replace('_', ' ')}] {r['kind']}: {r['name']} ({r['url']}), score {r['score'] if r['score'] is not None else 'n/a'}")
     text = "\n".join(md)
     write = lambda rel, s: ((root / rel).parent.mkdir(parents=True, exist_ok=True), (root / rel).write_text(s, encoding="utf-8"))  # noqa: E731
     write("research/brief.md", text)
@@ -513,6 +520,23 @@ def map_for_brief(brief: dict) -> tuple[list, list]:
             why = "found by title search, not confirmed:"
         for p in papers[:1]:  # one reference repository belongs to the first paper unless we know better
             edges.append(edge(f"repo:{i}", f"paper:{p['paper_id']}", why))
+    originals = {}
+    for i, d in enumerate(brief["sources"]["datasets"]):
+        if d.get("user_provided"):
+            originals.setdefault("dataset", f"dataset:{i}")
+    for i, r in enumerate(brief["sources"]["repositories"]):
+        if r.get("user_provided"):
+            originals.setdefault("repository", f"repo:{i}")
+    for r in (brief["sources"].get("resources") or {}).get("recommendations", []):
+        if r["category"] not in ("better_alternative", "possible_needs_validation", "relevant_alternative"):
+            continue  # not-better and inaccessible candidates stay in the panel, not on the graph
+        tag = {"better_alternative": "Recommended: ", "possible_needs_validation": "Possible: ", "relevant_alternative": "Alternative: "}[r["category"]]
+        nid = f"rec:{r['id']}"
+        nodes.append(node(nid, "source", (tag + r["name"])[:60], url=_web_url(r.get("url")), source_type=r["kind"],
+                          meta={"recommendation": r["category"], "rec_id": r["id"], "action": r["action"], "score": r["score"]}))
+        target = originals.get(r["kind"])
+        edges.append(edge(nid, target, {"better_alternative": "better than", "possible_needs_validation": "may improve on"}.get(r["category"], "alternative to"))
+                     if target else edge(nid, f"paper:{papers[0]['paper_id']}", "suggested for"))
     for i, rp in enumerate(brief["sources"].get("related_papers") or []):
         arxiv = rp.get("arxiv")
         label = f"{rp['title'][:50]}" + (f" ({rp['year']})" if rp.get("year") else "")

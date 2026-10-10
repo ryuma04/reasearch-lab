@@ -50,7 +50,12 @@ def requirements_from(brief: dict, note: str = "") -> list[dict]:
     return reqs
 
 
-def template_plan(brief: dict, reqs: list[dict]) -> dict:
+def used_resources(decisions: list[dict] | None) -> list[dict]:
+    """Accepted or supplementary resources the plan must use."""
+    return [d for d in (decisions or []) if d["decision"] in ("accept", "supplement")]
+
+
+def template_plan(brief: dict, reqs: list[dict], decisions: list[dict] | None = None) -> dict:
     """A conventional reproduction plan that needs no AI; used when no model is available."""
     rid = [r["id"] for r in reqs]
     def t(i, title, deps, kind, modules, **kw):
@@ -61,7 +66,12 @@ def template_plan(brief: dict, reqs: list[dict]) -> dict:
     tasks = [
         t(1, "Pin dependencies in requirements.txt", [], "infra", ["requirements.txt"], outputs=["requirements.txt"], completion="pip install succeeds in the sandbox",
           validation="Install step exits 0", failure="pip reports a version conflict"),
-        t(2, "Load and split the data", [1], "code", ["src/download_data.py"], outputs=["data splits"], validation="Train and test data do not overlap"),
+        t(2, "Load and split the data", [1], "code", ["src/download_data.py"], outputs=["data splits"], validation="Train and test data do not overlap",
+          description="Load and split the data. " + " ".join(
+              (f"Use the accepted {d['kind']} {d['name']} ({d['url']}) as the primary resource." if d["decision"] == "accept"
+               else f"Use {d['kind']} {d['name']} ({d['url']}) as a supplement to {d.get('original') or 'the original'}, only if formats, labels and licences are compatible.")
+              for d in used_resources(decisions)) + " " + " ".join(
+              f"Do not use {d['name']} (rejected by the researcher)." for d in (decisions or []) if d["decision"] == "reject")),
         t(3, "Implement the model and training loop", [2], "code", ["src/models.py", "src/train.py"], outputs=["trained model"], reqs=rid[:-1] or rid),
         t(4, "Write measured results to results/metrics.json", [3], "code", ["src/train.py"], outputs=["results/metrics.json"],
           completion="metrics.json lists every claimed metric", validation="The Go API validates and records each number", reqs=rid[-1:] if len(rid) > 1 else rid),
@@ -76,7 +86,7 @@ def template_plan(brief: dict, reqs: list[dict]) -> dict:
 
 # ---------- validation (deterministic) ----------
 
-def validate(plan: dict, requirement_ids: list[str]) -> dict:
+def validate(plan: dict, requirement_ids: list[str], decisions: list[dict] | None = None) -> dict:
     errors: list[str] = []
     warnings: list[str] = []
     tasks = plan.get("tasks") if isinstance(plan, dict) else None
@@ -106,6 +116,10 @@ def validate(plan: dict, requirement_ids: list[str]) -> dict:
     missing = [r for r in requirement_ids if r not in covered]
     if missing:
         errors.append("Requirements not covered by any task: " + ", ".join(missing))
+    text = json.dumps(tasks).lower()
+    for d in used_resources(decisions):
+        if d["name"].lower() not in text and d["url"].lower() not in text:
+            errors.append(f"The accepted {d['kind']} {d['name']} is not used by any task")
     if not plan.get("external_dependencies"):
         warnings.append("No external dependencies are listed")
     if not plan.get("assumptions"):
@@ -171,39 +185,46 @@ def _ask(agent: str, system: str, user: str) -> tuple[dict | None, dict]:
     return (data if isinstance(data, dict) else None), (acc[-1] if acc else {})
 
 
+def _decision_text(decisions: list[dict] | None) -> str:
+    if not decisions:
+        return "Resource decisions: none yet (keep the researcher's original resources)."
+    return ("Resource decisions by the researcher (follow them exactly; never reselect a rejected resource; use accepted ones as stated): "
+            + json.dumps([{k: d[k] for k in ("kind", "name", "url", "decision", "note", "original")} for d in decisions]))
+
+
 def _brief_text(brief: dict) -> str:
     keep = {"papers": [{k: p.get(k) for k in ("title", "summary", "method", "settings", "claims", "missing_details")} for p in brief.get("papers", [])],
             "sources": {k: (brief.get("sources") or {}).get(k) for k in ("repositories", "datasets", "recommendation")}}
     return json.dumps(keep, default=str)[:20000]
 
 
-def initial_plan(brief: dict, reqs: list[dict]) -> tuple[dict, str, dict]:
+def initial_plan(brief: dict, reqs: list[dict], decisions: list[dict] | None = None) -> tuple[dict, str, dict]:
     """(plan, source, invocation metadata). Uses AI when available; otherwise (or when its plan does not validate) the template."""
-    data, meta = _ask("planning_a", A_SYSTEM, f"Requirements: {json.dumps(reqs)}\n\nResearch brief: {_brief_text(brief)}")
-    if data and validate(data, [r["id"] for r in reqs])["ok"]:
+    data, meta = _ask("planning_a", A_SYSTEM, f"Requirements: {json.dumps(reqs)}\n\n{_decision_text(decisions)}\n\nResearch brief: {_brief_text(brief)}")
+    if data and validate(data, [r["id"] for r in reqs], decisions)["ok"]:
         data["requirements"] = data.get("requirements") or reqs
         return data, "ai", meta
-    return template_plan(brief, reqs), "template", meta
+    return template_plan(brief, reqs, decisions), "template", meta
 
 
-def optimize(initial: dict, brief: dict, reqs: list[dict]) -> tuple[dict | None, dict]:
+def optimize(initial: dict, brief: dict, reqs: list[dict], decisions: list[dict] | None = None) -> tuple[dict | None, dict]:
     """The optimizer's own critique and improved plan, or (None, meta) when it fails: nothing is invented."""
-    data, meta = _ask("planning_b", B_SYSTEM, f"Requirements: {json.dumps(reqs)}\n\nInitial plan: {json.dumps(initial)}\n\nResearch brief: {_brief_text(brief)}")
+    data, meta = _ask("planning_b", B_SYSTEM, f"Requirements: {json.dumps(reqs)}\n\n{_decision_text(decisions)}\n\nInitial plan: {json.dumps(initial)}\n\nResearch brief: {_brief_text(brief)}")
     return data, meta
 
 
-def build_plans(run_id: int, brief: dict, note: str = "") -> dict:
+def build_plans(run_id: int, brief: dict, note: str = "", decisions: list[dict] | None = None) -> dict:
     """Run both planning stages, validate, persist both plans, and decide which one (if any) may be approved."""
     reqs = requirements_from(brief, note)
     rids = [r["id"] for r in reqs]
     bus.emit(run_id, "planning.initial", "agent_started", "Drafting the initial implementation plan", "Planner A turns the research brief into ordered, testable tasks")
-    initial, source, meta_a = initial_plan(brief, reqs)
-    v_initial = validate(initial, rids)
+    initial, source, meta_a = initial_plan(brief, reqs, decisions)
+    v_initial = validate(initial, rids, decisions)
     bus.emit(run_id, "planning.initial", "agent_finished", f"Initial plan: {len(initial['tasks'])} tasks ({source})", "",
              {"validation": v_initial, "provider": meta_a.get("provider"), "model": meta_a.get("model")})
 
     bus.emit(run_id, "planning.optimizer", "agent_started", "Critiquing and optimizing the initial plan", "Planner B must find weaknesses, not copy the plan")
-    opt_raw, meta_b = optimize(initial, brief, reqs)
+    opt_raw, meta_b = optimize(initial, brief, reqs, decisions)
     optimized, v_opt, failure, weaknesses = None, None, "", []
     if opt_raw is None:
         failure = "The optimizer returned no usable plan (no AI provider available or invalid output); the initial plan is kept"
@@ -211,7 +232,7 @@ def build_plans(run_id: int, brief: dict, note: str = "") -> dict:
         weaknesses = opt_raw.pop("weaknesses", []) or []
         opt_raw.pop("changes", None)  # the diff is computed from the plans, not trusted from the model
         opt_raw["requirements"] = opt_raw.get("requirements") or reqs
-        v_opt = validate(opt_raw, rids)
+        v_opt = validate(opt_raw, rids, decisions)
         if v_opt["ok"] and diff(initial, opt_raw)["tasks"]["optimized"] and (weaknesses or diff(initial, opt_raw)["added"] or diff(initial, opt_raw)["changed"]):
             optimized = opt_raw
         elif v_opt["ok"]:
@@ -222,7 +243,7 @@ def build_plans(run_id: int, brief: dict, note: str = "") -> dict:
     ready = "optimized" if optimized else ("initial" if v_initial["ok"] else None)
     review = {"initial": {"plan": initial, "source": source, "validation": v_initial, "invocation": meta_a},
               "optimized": {"plan": optimized, "validation": v_opt, "weaknesses": weaknesses, "diff": d, "invocation": meta_b, "failure": failure} if (optimized or failure) else None,
-              "ready": ready, "requirements": reqs}
+              "ready": ready, "requirements": reqs, "resource_decisions": decisions or []}
     bus.emit(run_id, "planning.optimizer", "agent_finished",
              ("Optimized plan ready: " + f"{len(d['added'])} tasks added, {len(d['changed'])} changed" if optimized else f"Optimization did not produce a plan: {failure}"),
              "", {"validation": v_opt, "provider": meta_b.get("provider"), "model": meta_b.get("model")})

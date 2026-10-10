@@ -57,6 +57,13 @@ class Fetch:
 
     def __init__(self) -> None:
         self.limits: list[str] = []
+        self.searches: dict[str, list[int]] = {"github": [0, 0], "huggingface": [0, 0]}  # provider -> [ok, failed] search calls
+
+    def search(self, host: str, url: str, params: dict | None = None):
+        """A discovery search: unlike a lookup, a failure here means discovery is incomplete, not that nothing exists."""
+        data = self.json(url, params)
+        self.searches[host][0 if data is not None else 1] += 1
+        return data
 
     def json(self, url: str, params: dict | None = None):
         try:
@@ -144,7 +151,7 @@ def discover(f: Fetch, title: str, arxiv_id: str) -> list[dict]:
 
     gh_queries = ([f'"{aid}" in:readme'] if aid else []) + ([f'"{title[:80]}" in:readme,description'] if title else [])
     for q in gh_queries:
-        data = f.json(f"{GH}/search/repositories", {"q": q, "per_page": MAX_PER_SOURCE})
+        data = f.search("github", f"{GH}/search/repositories", {"q": q, "per_page": MAX_PER_SOURCE})
         for it in (data or {}).get("items", [])[:MAX_PER_SOURCE]:
             add("github", "repo", it["full_name"])
     if aid:
@@ -152,12 +159,12 @@ def discover(f: Fetch, title: str, arxiv_id: str) -> list[dict]:
         m = parse_repo_url(str(paper.get("githubRepo") or ""))
         if m and m["host"] == "github":
             add("github", "repo", m["id"])
-        for it in (f.json(f"{HF}/api/models", {"filter": f"arxiv:{aid}", "sort": "downloads", "direction": -1, "limit": MAX_PER_SOURCE}) or [])[:MAX_PER_SOURCE]:
+        for it in (f.search("huggingface", f"{HF}/api/models", {"filter": f"arxiv:{aid}", "sort": "downloads", "direction": -1, "limit": MAX_PER_SOURCE}) or [])[:MAX_PER_SOURCE]:
             add("huggingface", "model", it.get("id", ""))
     if title:
-        for it in (f.json(f"{HF}/api/models", {"search": title[:80], "sort": "downloads", "direction": -1, "limit": MAX_PER_SOURCE}) or [])[:MAX_PER_SOURCE]:
+        for it in (f.search("huggingface", f"{HF}/api/models", {"search": title[:80], "sort": "downloads", "direction": -1, "limit": MAX_PER_SOURCE}) or [])[:MAX_PER_SOURCE]:
             add("huggingface", "model", it.get("id", ""))
-        for it in (f.json(f"{HF}/api/spaces", {"search": title[:80], "limit": 2}) or [])[:2]:
+        for it in (f.search("huggingface", f"{HF}/api/spaces", {"search": title[:80], "limit": 2}) or [])[:2]:
             add("huggingface", "space", it.get("id", ""))
     out = []
     for key, (kind, hid) in list(seen.items())[:8]:
@@ -239,7 +246,15 @@ def _public(c: dict) -> dict:
 
 # ---------- decision ----------
 
-def decide(original: dict | None, alternatives: list[dict], limits: list[str]) -> dict:
+def providers_of(f: Fetch) -> list[dict]:
+    out = []
+    for name, (ok, bad) in f.searches.items():
+        out.append({"name": name, "status": "ok" if ok and not bad else "partial" if ok else "failed" if bad else "not_used",
+                    "searches_ok": ok, "searches_failed": bad})
+    return [{**p, "status": "ok" if p["status"] in ("ok", "partial", "not_used") else "failed"} for p in out]
+
+
+def decide(original: dict | None, alternatives: list[dict], limits: list[str], search_ok: bool = True) -> dict:
     """Verdict, the recommended alternative (if one is justified) and a like-for-like comparison."""
     relevant = [a for a in alternatives if a.get("fetched") and a.get("mentions_paper")]
     res: dict = {"verdict": "no_alternative_found", "recommended": None, "comparison": [], "advantages": [], "tradeoffs": [],
@@ -247,6 +262,10 @@ def decide(original: dict | None, alternatives: list[dict], limits: list[str]) -
     if original is not None and not original.get("fetched"):
         res.update(verdict="insufficient_evidence", summary=f"The supplied repository ({original['url']}) could not be read, so it cannot be compared with alternatives.")
         res["limitations"].append("Original repository metadata was unavailable")
+        return res
+    if not relevant and not search_ok:
+        res.update(verdict="search_failed", summary="Repository discovery could not be completed (the search providers did not answer), so nothing can be said about better repositories. "
+                                                  + ("Your repository remains the reference." if original else ""))
         return res
     if not relevant:
         if original is None:
@@ -298,7 +317,9 @@ def assess(title: str, arxiv_id: str, user_urls: list[str]) -> dict:
     alts = [evaluate(a, title, arxiv_id) for a in discover(f, title, arxiv_id) if a["url"].lower() not in orig_urls]
     alts.sort(key=lambda a: a.get("score", 0), reverse=True)
     primary = originals[0] if originals else None
-    res = decide(primary, alts, f.limits)
+    search_ok = any(ok for ok, _ in f.searches.values()) or not any(bad for _, bad in f.searches.values())
+    res = decide(primary, alts, f.limits, search_ok)
+    res["providers"] = providers_of(f)
     res["original"] = [_public(o) for o in originals]
     res["alternatives"] = [_public(a) for a in alts]
     res["criteria_note"] = ("Every candidate, the original included, is scored 0-100 on relevance (30), documentation (15), completeness (25), "

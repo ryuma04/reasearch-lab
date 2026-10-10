@@ -29,7 +29,7 @@ const KIND_ICON: Record<string, React.ElementType> = {
 };
 
 
-export function ResearchMapView({ map, onSelect, selected }: { map: ResearchMap; onSelect?: (n: MapNode) => void; selected?: string | null }) {
+export function ResearchMapView({ map, onSelect, selected, decisions }: { map: ResearchMap; onSelect?: (n: MapNode) => void; selected?: string | null; decisions?: Record<string, string> }) {
   const L = React.useMemo(() => layout(map), [map]);
   const [view, setView] = React.useState<"graph" | "list">("graph");
   const [query, setQuery] = React.useState("");
@@ -204,15 +204,18 @@ export function ResearchMapView({ map, onSelect, selected }: { map: ResearchMap;
                 const hit = q && matches(n);
                 const faded = dim(n.id) || (q && !matches(n));
                 const isSel = active === n.id;
+                const rec = typeof n.meta?.recommendation === "string" ? (n.meta.recommendation as string) : null;
+                const recDecision = rec && typeof n.meta?.rec_id === "string" ? decisions?.[n.meta.rec_id as string] : undefined;
+                const recLabel = rec === "better_alternative" ? "Recommended alternative" : rec === "possible_needs_validation" ? "Possible alternative" : rec ? "Alternative" : null;
                 return (
                   <foreignObject key={n.id} x={n.x} y={n.y} width={CARD_W} height={CARD_H} opacity={faded ? 0.25 : 1} data-card>
                     <button type="button" onClick={() => choose(n)} title={`${n.kindRaw}: ${n.label}${n.detail ? ` — ${n.detail}` : ""}`}
                       aria-label={`${n.kindRaw}: ${n.label} (${n.status})`}
                       className="flex h-full w-full flex-col justify-center rounded-2xl border-2 px-3 text-left shadow-[0_2px_0_rgba(38,35,58,0.08)] transition hover:-translate-y-0.5"
-                      style={{ background: st.fill, borderColor: isSel ? "#7b5cf0" : hit ? "#f0b429" : st.stroke, boxShadow: isSel ? "0 0 0 3px #e4dcff" : undefined }}>
+                      style={{ background: rec === "better_alternative" ? "#e3f7ec" : st.fill, borderColor: isSel ? "#7b5cf0" : hit ? "#f0b429" : rec === "better_alternative" ? "#1f9d6b" : st.stroke, borderStyle: rec && rec !== "better_alternative" ? "dashed" : "solid", boxShadow: isSel ? "0 0 0 3px #e4dcff" : undefined }}>
                       <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted">
                         {React.createElement(KIND_ICON[n.kindRaw] ?? Brain, { size: 12, weight: "bold" })}
-                        {n.kindRaw}
+                        {recLabel ? <span className={rec === "better_alternative" ? "text-[#1f7a55]" : ""}>{recLabel}{recDecision ? ` · ${recDecision.replace("_", " ")}` : ""}</span> : n.kindRaw}
                         <span className="ml-auto h-2 w-2 rounded-full" style={{ background: st.dot }} />
                       </span>
                       <span className="mt-0.5 line-clamp-2 text-[13px] font-semibold leading-tight text-ink">{n.label}</span>

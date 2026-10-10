@@ -18,7 +18,7 @@ from langgraph.types import interrupt
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
-from . import bus, coding, db, gap, memory, planner, research, steps, testing
+from . import bus, coding, db, gap, memory, planner, research, resources, steps, testing
 from .config import settings as cfg
 from .observer import edge, node
 from .project import fmt, fresh_project, load_settings, pdir, run_row
@@ -102,6 +102,13 @@ def n_research(s: State) -> State:
         t.notes = sources["recommendation"][:300]
     brief = research.write_brief(run_id, r["workspace_id"], infos, sources, docs)
     nodes, edges_ = research.map_for_brief(brief)
+    res = brief["sources"]["resources"]
+    counts = {}
+    for r_ in res["recommendations"]:
+        counts[r_["category"]] = counts.get(r_["category"], 0) + 1
+    bus.emit(run_id, "research.source_finder", "resources_ready", f"Resource review {res['status']}: {res['note']}",
+             "Discovery and comparison finished before the plan is approved; your original resources are never replaced without your decision",
+             {"status": res["status"], "counts": counts, "providers": res["providers"]})
     bus.emit(run_id, reader, "brief_ready", "Research Brief ready: " + sources["recommendation"][:200], "",
              {"map_nodes": nodes, "map_edges": edges_, "file": "research/brief.md"})
     return {}
@@ -129,13 +136,13 @@ def n_ask_plan(s: State) -> State:
     return {}
 
 
-def _plan_review(run_id: int, brief: dict, reuse: bool = False) -> dict:
+def _plan_review(run_id: int, brief: dict, reuse: bool = False, decisions: list | None = None) -> dict:
     """Initial + optimized implementation plans (both kept). Re-asking after a refused approval reuses the saved review."""
     path = pdir(run_id) / "research" / "plan_review.json"
     if reuse and path.exists():
         return json.loads(path.read_text(encoding="utf-8"))
     note = (db.q1("SELECT w.note FROM workspaces w JOIN runs r ON r.workspace_id=w.id WHERE r.id=%s", (run_id,)) or {}).get("note", "")
-    return planner.build_plans(run_id, brief, note or "")
+    return planner.build_plans(run_id, brief, note or "", decisions if decisions is not None else resources.decisions_for(run_id, brief))
 
 
 def n_wait_plan(s: State) -> State:
@@ -146,6 +153,14 @@ def n_wait_plan(s: State) -> State:
         bus.emit(run_id, "system", "run_rejected", "The researcher rejected the plan; the run stops here", "")
         return {"outcome": "rejected"}
     rv = pdir(run_id) / "research" / "plan_review.json"
+    # Resource decisions made while reviewing the plan: re-plan so the planner and optimizer use them.
+    if rv.exists() and action in ("approve", "edit"):
+        brief = _brief(run_id)
+        decisions = resources.decisions_for(run_id, brief)
+        if decisions != (json.loads(rv.read_text(encoding="utf-8")).get("resource_decisions") or []):
+            bus.emit(run_id, "planning.initial", "resources_applied", f"Re-planning with your {len(decisions)} resource decision(s)",
+                     "Accepted resources must be used by the plan; rejected ones are never reselected")
+            _plan_review(run_id, brief, reuse=False, decisions=decisions)
     if rv.exists() and json.loads(rv.read_text(encoding="utf-8")).get("ready") is None:
         bus.emit(run_id, "system", "plan_blocked", "Coding was not started: no implementation plan passed validation",
                  "Coding only starts from an approved plan that passed the quality gate; edit or reject the plan")

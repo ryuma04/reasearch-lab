@@ -2,7 +2,7 @@
 
 import { useQuery, type UseQueryOptions } from "@tanstack/react-query";
 import { isApiError } from "@/lib/api/errors";
-import { authApi, githubApi, memoryApi, runApi, sandboxApi, shareApi, teamApi, workspaceApi } from "@/lib/api/services";
+import { authApi, githubApi, memoryApi, resourceApi, runApi, sandboxApi, shareApi, teamApi, workspaceApi } from "@/lib/api/services";
 import type { SandboxExecution } from "@/lib/api/types";
 
 const isLive = (e?: SandboxExecution | null) => e?.status === "running" || e?.status === "queued";
@@ -44,6 +44,7 @@ export const qk = {
   myPushes: ["me", "pushes"] as const,
   repos: ["github", "repos"] as const,
   workspaces: ["workspaces"] as const,
+  resources: (id: string) => ["run", id, "resources"] as const,
   workspace: (id: string) => ["workspace", id] as const,
   notes: (id: string) => ["workspace", id, "notes"] as const,
   run: (id: string) => ["run", id] as const,
@@ -106,6 +107,8 @@ export const useSettings = (id: string | null) =>
   useQuery({ queryKey: qk.settings(id ?? ""), queryFn: ({ signal }) => runApi.settings(id!, signal), enabled: !!id });
 export const useWhatIfs = (id: string | null, refetchInterval?: number | false) =>
   useQuery({ queryKey: qk.whatifs(id ?? ""), queryFn: ({ signal }) => runApi.whatIfs(id!, signal), enabled: !!id, refetchInterval });
+export const useResources = (id: string | null) =>
+  useQuery({ queryKey: qk.resources(id ?? ""), queryFn: ({ signal }) => resourceApi.get(id!, signal), enabled: !!id });
 export const useBrief = (id: string | null) =>
   useQuery({ queryKey: qk.brief(id ?? ""), queryFn: ({ signal }) => runApi.brief(id!, signal), enabled: !!id });
 export const useRunFiles = (id: string | null) =>
