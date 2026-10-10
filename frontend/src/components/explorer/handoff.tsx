@@ -24,12 +24,12 @@ export function HandoffButton({ title, text, arxivId }: { title: string; text: s
       if (arxivId) {
         try { await workspaceApi.upload(ws.id, { kind: "paper", url: `arXiv:${arxivId}` }); } catch { /* the workspace still exists; the paper can be added there */ }
       }
-      toast.success("New workspace created", "Review it and start the run when you are ready.");
+      toast.success("New workspace created", "Start the run when ready.");
       router.push(`/workspaces/${ws.id}`);
     } catch (e) {
       toast.error("Couldn't hand this off", userMessage(e));
       setBusy(false);
     }
   };
-  return <Button size="sm" variant="purple" loading={busy} onClick={() => void go()}><Flask size={14} /> Test in a new research workspace</Button>;
+  return <Button size="sm" variant="purple" loading={busy} onClick={() => void go()}><Flask size={14} /> Test in new workspace</Button>;
 }

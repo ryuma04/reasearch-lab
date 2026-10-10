@@ -55,17 +55,17 @@ function StatusCell({ cell, byId }: { cell: XCell; byId: Map<string, XPaper> }) 
 export function ComparisonView({ comparison, papers }: { comparison: XComparison; papers: XPaper[] }) {
   const byId = React.useMemo(() => new Map(papers.map((p) => [p.id, p])), [papers]);
   if (!comparison.ai) {
-    return <EmptyState title="The comparison needs an AI provider" body="Comparing systems requires reading the abstracts with an AI model. Add a Groq or Gemini key and refresh the analysis. Nothing is filled in by guesswork." />;
+    return <EmptyState title="The comparison needs an AI provider" body="Add a Groq or Gemini key, then refresh." />;
   }
   const filled = comparison.capabilities.length > 0 || COLUMNS.some((c) => Object.keys(comparison.descriptive[c.key] ?? {}).length > 0);
-  if (!filled) return <EmptyState title="Nothing could be compared with evidence" body="None of the abstracts stated enough, with a quotable sentence, to fill the comparison. That is shown as empty rather than assumed." />;
+  if (!filled) return <EmptyState title="Nothing to compare" body="The abstracts had no quotable details." />;
 
   return (
     <div className="space-y-6">
       <Card variant="bento" className="flex flex-wrap items-center gap-2 p-3 text-xs" aria-label="Legend">
         <span className="font-bold text-muted">Status legend</span>
         {(Object.keys(STATUS) as CapabilityStatus[]).map((k) => { const m = STATUS[k]; return <span key={k} className={cn("inline-flex items-center gap-1 rounded-full px-2 py-1 font-bold", m.cls)}><m.Icon size={12} weight="fill" /> {m.label}</span>; })}
-        <span className="text-muted">A paper not mentioning something is “not reported”, never “absent”. Select a status to see its supporting quote.</span>
+        <span className="text-muted">Not mentioned means not reported, not absent. Click a status to see its quote.</span>
       </Card>
 
       {comparison.capabilities.length > 0 && (
@@ -124,7 +124,7 @@ export function ComparisonView({ comparison, papers }: { comparison: XComparison
                   return (
                     <tr key={s.id}>
                       <th scope="row" className="w-[230px] bg-canvas px-3 py-2.5 align-top text-xs font-semibold"><span className="line-clamp-3">{s.name}</span><span className="font-normal text-muted">{s.year ?? ""}</span></th>
-                      <td className="px-3 py-2.5 align-top">{cell ? <><p className="text-ink-soft">{cell.text}</p><Evidence cell={cell} byId={byId} /></> : <span className="text-xs text-muted">Not reported in the abstract</span>}</td>
+                      <td className="px-3 py-2.5 align-top">{cell ? <><p className="text-ink-soft">{cell.text}</p><Evidence cell={cell} byId={byId} /></> : <span className="text-xs text-muted">Not reported</span>}</td>
                     </tr>
                   );
                 })}

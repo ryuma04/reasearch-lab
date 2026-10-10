@@ -32,7 +32,7 @@ describe("ResearchGraph", () => {
     expect(items[0]).toHaveTextContent("Ada Lovelace, Alan Turing (2015)");
     expect(items[0]).toHaveTextContent("Abstract of a.");
     expect(items[0]).toHaveTextContent("Graph networks");
-    expect(items[3]).toHaveTextContent("No abstract available from the sources.");
+    expect(items[3]).toHaveTextContent("No abstract");
     expect(within(graph).getByText("Year not reported")).toBeInTheDocument();
     for (const y of ["2015", "2019", "2021"]) expect(within(graph).getByText(y)).toBeInTheDocument();
 
