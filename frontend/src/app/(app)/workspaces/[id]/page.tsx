@@ -19,6 +19,7 @@ import { Badge, Card, Field, Input, SectionTitle } from "@/components/ui/primiti
 import { EmptyState } from "@/components/ui/states";
 import { Sheet, toast } from "@/components/ui/overlays";
 import { CopyButton } from "@/components/ui/content";
+import { DeleteWorkspaceButton } from "@/components/workspace/delete-workspace";
 
 const uploadIcon = { paper: FilePdf, dataset: Database, repo_link: GithubLogo, note: LinkSimple };
 
@@ -111,8 +112,9 @@ export default function WorkspaceOverview() {
           <div className="mt-3 flex flex-wrap gap-2">
             <Button asChild size="sm" variant="secondary"><Link href={`/workspaces/${id}/results/notes`}>Notes</Link></Button>
             <Button asChild size="sm" variant="secondary"><Link href={`/workspaces/${id}/map`}>Research map</Link></Button>
-            <Button asChild size="sm" variant="secondary"><Link href={`/workspaces/${id}/publish`}>Publish to GitHub</Link></Button>
+            <Button asChild size="sm" variant="secondary"><Link href={`/workspaces/${id}/publish`}>Publish to Hugging Face</Link></Button>
             <Button asChild size="sm" variant="secondary"><Link href="/workspaces/new"><Plus size={14} /> New workspace</Link></Button>
+            {ws.data && (ws.data.role === undefined || ws.data.role === "owner") && <DeleteWorkspaceButton id={id} title={ws.data.title} variant="button" onDeleted={() => router.push("/dashboard")} />}
           </div>
         </Card>
       </div>

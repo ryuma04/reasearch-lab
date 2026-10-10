@@ -42,7 +42,7 @@ export function toMe(raw: unknown): T.MeResponse & { pushes: T.Push[] } {
 
 /* ── Workspaces ── */
 
-export function toWorkspace(raw: unknown): T.Workspace {
+export function toWorkspace(raw: unknown): T.WorkspaceSummary {
   const w = isObj(raw) && isObj(raw.workspace) ? raw.workspace : isObj(raw) ? raw : {};
   return {
     id: id(w.id),
@@ -51,6 +51,7 @@ export function toWorkspace(raw: unknown): T.Workspace {
     compute_budget: (w.compute_budget as T.ComputeBudget) ?? "quick",
     note: s(w.note),
     created_at: String(w.created_at ?? ""),
+    role: (s(w.role) ?? undefined) as T.WorkspaceRole | undefined,
   };
 }
 

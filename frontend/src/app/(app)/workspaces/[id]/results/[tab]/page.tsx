@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { notFound, useParams } from "next/navigation";
 import { motion } from "motion/react";
-import { DownloadSimple, GithubLogo, SpeakerHigh } from "@phosphor-icons/react";
+import { DownloadSimple, SpeakerHigh, UploadSimple } from "@phosphor-icons/react";
 import { useRunStream } from "@/lib/hooks/use-run-stream";
 import { useBriefing, useScorecard } from "@/lib/hooks/queries";
 import { runApi } from "@/lib/api/services";
@@ -45,7 +45,7 @@ export default function ResultsPage() {
         <div className="flex flex-wrap gap-2">
           <Button asChild size="sm" variant="secondary"><a href={runApi.reportUrl(runId, "md")} download><DownloadSimple size={16} /> Report .md</a></Button>
           <Button asChild size="sm" variant="secondary"><a href={runApi.reportUrl(runId, "pdf")} download><DownloadSimple size={16} /> Report .pdf</a></Button>
-          <Button asChild size="sm"><Link href={`/workspaces/${id}/publish${q}`}><GithubLogo size={16} /> Publish</Link></Button>
+          <Button asChild size="sm"><Link href={`/workspaces/${id}/publish${q}`}><UploadSimple size={16} /> Publish</Link></Button>
         </div>
         {briefing.data?.audio_url ? (
           <div className="w-full"><p className="mb-1 flex items-center gap-1.5 text-xs font-bold text-muted"><SpeakerHigh size={14} /> Audio briefing</p><audio controls src={briefing.data.audio_url} className="w-full" /></div>

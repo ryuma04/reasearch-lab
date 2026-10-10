@@ -285,7 +285,7 @@ def n_finalize(s: State) -> State:
     db.ex("""INSERT INTO notes (workspace_id, run_id, author_type, author, title, markdown)
              VALUES (%s,%s,'agent','system',%s,%s)""", (r["workspace_id"], run_id, f"Run #{run_id} summary", "\n".join(note)))
     db.ex("UPDATE runs SET status='completed', stage='push', finished_at=now() WHERE id=%s", (run_id,))
-    bus.emit(run_id, "system", "run_completed", msg, "Results are ready; approve the push to GitHub when you are happy",
+    bus.emit(run_id, "system", "run_completed", msg, "Results are ready; publish to Hugging Face when you are happy",
              {"scorecard": counts})
     return {"outcome": "completed"}
 

@@ -47,6 +47,10 @@ export const workspaceApi = {
     A.toWorkspace(await request(ENDPOINTS.createWorkspace, { body })),
   get: async (id: string, signal?: AbortSignal): Promise<T.WorkspaceDetail> =>
     A.toWorkspaceDetail(await request(ENDPOINTS.getWorkspace, { params: { id }, signal })),
+  /** Owner only; the server refuses (409) while a run is executing. */
+  remove: async (id: string): Promise<void> => {
+    await request<void>(ENDPOINTS.deleteWorkspace, { params: { id } });
+  },
   /** Files go as multipart (with progress); links (arXiv, dataset URL, repository) as JSON. */
   upload: async (id: string, req: T.UploadRequest, onProgress?: (p: UploadProgress) => void, signal?: AbortSignal): Promise<T.Upload> => {
     if (req.file) {
@@ -117,16 +121,6 @@ export const runApi = {
   metricProof: async (metricId: string, signal?: AbortSignal) =>
     A.toMetric(await request(ENDPOINTS.metricProof, { params: { id: metricId }, signal })),
   /** Approval is explicit: the UI only calls this after the researcher ticks and confirms. */
-  push: async (id: string, body: T.PushRequest): Promise<T.Push> => {
-    const res = await request<unknown>(ENDPOINTS.push, { params: { id }, body: { repo: body.repo_full_name } });
-    return A.toPush({ ...(res as object), run_id: id });
-  },
-  /** Latest push of the run (backend lists newest first); 404-JSON-like "not found" when none. */
-  pushStatus: async (id: string, signal?: AbortSignal): Promise<T.Push> => {
-    const list = unwrapList<unknown>(await request(ENDPOINTS.pushStatus, { params: { id }, signal }), "pushes");
-    if (!list.length) throw Object.assign(new Error("No push yet for this run"), { kind: "not_found", status: 404 });
-    return A.toPush(list[0]);
-  },
 };
 
 /* ── Code sandbox ── */

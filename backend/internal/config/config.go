@@ -54,8 +54,6 @@ type Config struct {
 	SandboxMaxArtifactMB      int64
 	SandboxMaxArtifactTotalMB int64
 
-	N8NWebhookURL      string
-	PushDirectFallback bool
 	GitleaksBin        string
 
 	// HFToken is only checked for presence here (the agent worker uploads with it); never logged or sent.
@@ -108,8 +106,6 @@ func Load() (*Config, error) {
 		SandboxMaxArtifactMB:      int64(getInt("SANDBOX_MAX_ARTIFACT_MB", 512)),
 		SandboxMaxArtifactTotalMB: int64(getInt("SANDBOX_MAX_ARTIFACTS_TOTAL_MB", 2048)),
 
-		N8NWebhookURL:      get("N8N_WEBHOOK_URL", ""),
-		PushDirectFallback: getBool("PUSH_DIRECT_FALLBACK", true),
 		GitleaksBin:        get("GITLEAKS_BIN", "gitleaks"),
 		HFToken:            get("HF_TOKEN", ""),
 	}

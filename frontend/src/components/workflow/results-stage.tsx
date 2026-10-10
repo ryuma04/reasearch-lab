@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ArrowSquareOut, CheckCircle, FileText, GithubLogo, Prohibit, WarningOctagon } from "@phosphor-icons/react";
+import { ArrowSquareOut, CheckCircle, FileText, UploadSimple, Prohibit, WarningOctagon } from "@phosphor-icons/react";
 import type { Run, RunEvent } from "@/lib/api/types";
 import { useBrief, useGaps, useMe, useResearchMap, useRunFiles, useScorecard, useSettings, useTests, useWhatIfs } from "@/lib/hooks/queries";
 import { buildExecutions, buildIncidents } from "@/lib/workflow/activity";
@@ -66,7 +66,7 @@ export function ResultsStage({ run, workspaceId, events, outcome, onOpen }: {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild size="sm" variant="secondary"><Link href={`${base}/replay?run=${runId}`}>Replay the run</Link></Button>
-          {outcome === "succeeded" && <Button asChild size="sm" variant="purple"><Link href={`${base}/publish?run=${runId}`}><GithubLogo size={15} /> Publish to GitHub</Link></Button>}
+          {outcome === "succeeded" && <Button asChild size="sm" variant="purple"><Link href={`${base}/publish?run=${runId}`}><UploadSimple size={15} /> Publish to Hugging Face</Link></Button>}
           {repo?.repo_url && <Button asChild size="sm" variant="outline"><a href={repo.repo_url} target="_blank" rel="noopener noreferrer"><ArrowSquareOut size={15} /> Repository</a></Button>}
         </div>
       </div>

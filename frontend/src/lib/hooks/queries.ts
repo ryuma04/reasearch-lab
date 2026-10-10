@@ -62,7 +62,6 @@ export const qk = {
   map: (id: string) => ["run", id, "map"] as const,
   runMemory: (id: string) => ["run", id, "memory"] as const,
   briefing: (id: string) => ["run", id, "briefing"] as const,
-  pushStatus: (id: string) => ["run", id, "push"] as const,
   executions: (id: string) => ["run", id, "sandbox", "executions"] as const,
   execution: (execId: string) => ["sandbox", "execution", execId] as const,
   sandboxStatus: ["sandbox", "status"] as const,
@@ -127,11 +126,6 @@ export const useRunMemory = (id: string | null) =>
   useQuery({ queryKey: qk.runMemory(id ?? ""), queryFn: ({ signal }) => runApi.memory(id!, signal), enabled: !!id });
 export const useBriefing = (id: string | null) =>
   useQuery({ queryKey: qk.briefing(id ?? ""), queryFn: ({ signal }) => runApi.briefing(id!, signal), enabled: !!id });
-export const usePushStatus = (
-  id: string | null,
-  refetchInterval?: number | false | ((q: { state: { data: Awaited<ReturnType<typeof runApi.pushStatus>> | undefined } }) => number | false),
-) =>
-  useQuery({ queryKey: qk.pushStatus(id ?? ""), queryFn: ({ signal }) => runApi.pushStatus(id!, signal), enabled: !!id, refetchInterval });
 
 export const useAgents = () => useQuery({ queryKey: qk.agents, queryFn: ({ signal }) => teamApi.agents(signal) });
 export const useMemorySearch = (q: string) =>

@@ -82,4 +82,18 @@ describe("HuggingFacePublish", () => {
     expect(screen.getByRole("button", { name: /Publish to Hugging Face/ })).toBeDisabled();
     expect(screen.queryByText(/should-not-show/)).not.toBeInTheDocument();
   });
+
+  it("explains a half-typed name inline and keeps the form, instead of replacing it with an error", async () => {
+    const b = backend(PLAN);
+    show(b);
+    await waitFor(() => expect(screen.getByLabelText(/Repository name/)).toHaveValue("digits-run-33"));
+    fireEvent.change(screen.getByLabelText(/Repository name/), { target: { value: "saquibshakih-" } }); // on the way to saquibshakih-run-42
+    expect(await screen.findByRole("alert", { name: "" })).toHaveTextContent(/"saquibshakih-" is not a valid Hugging Face name/);
+    expect(screen.getByLabelText(/Repository name/)).toBeInTheDocument(); // the form is still there
+    expect(screen.getByRole("button", { name: /Publish to Hugging Face/ })).toBeDisabled();
+    await new Promise((r) => setTimeout(r, 800)); // past the debounce: the invalid name must not reach the server
+    expect(b.calls.some((c) => c.key === "hfPreview" && /repo=saquibshakih-(&|$)/.test(c.url))).toBe(false);
+    fireEvent.change(screen.getByLabelText(/Repository name/), { target: { value: "saquibshakih-run-42" } });
+    await waitFor(() => expect(screen.queryByText(/is not a valid Hugging Face name/)).not.toBeInTheDocument());
+  });
 });

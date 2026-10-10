@@ -27,21 +27,6 @@ services:
       timeout: 3s
       retries: 20
 
-  # n8n is only reachable inside the private compose network (no host port by default).
-  # Uncomment the ports block once to import n8n/github-push.json, then comment it again.
-  n8n:
-    image: n8nio/n8n:latest
-    environment:
-      N8N_DIAGNOSTICS_ENABLED: "false"
-      EXECUTIONS_DATA_SAVE_ON_SUCCESS: none
-      EXECUTIONS_DATA_SAVE_ON_ERROR: none
-      EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS: "false"
-    # ports:
-    #   - "5678:5678"
-    volumes:
-      - n8ndata:/home/node/.n8n
-    profiles: ["full"]
-
   api:
     build: ./backend
     env_file: .env
@@ -50,7 +35,6 @@ services:
       REDIS_URL: redis://redis:6379/0
       DATA_DIR: /data
       AGENTS_URL: http://agents:8001
-      N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL:-http://n8n:5678/webhook/github-push}
       # Sandbox containers are started on the host Docker; bind mounts need the host path of ./data
       SANDBOX_HOST_DATA_DIR: ${HOST_DATA_DIR:-}
     ports:
@@ -82,4 +66,3 @@ services:
 
 volumes:
   pgdata:
-  n8ndata:

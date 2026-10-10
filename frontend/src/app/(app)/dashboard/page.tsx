@@ -1,19 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { Flask, GithubLogo, Plus, ArrowRight, Warning } from "@phosphor-icons/react";
+import { Flask, GithubLogo, Plus, ArrowRight } from "@phosphor-icons/react";
 import { useMe, useWorkspaces } from "@/lib/hooks/queries";
 import { isApiError } from "@/lib/api/errors";
 import { budgetLabel, runStatusMeta } from "@/lib/status";
 import { formatDateTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { DeleteWorkspaceButton } from "@/components/workspace/delete-workspace";
 import { Badge, Card, StatCard } from "@/components/ui/primitives";
 import { EmptyState, EndpointUnavailable, ErrorState, SkeletonList } from "@/components/ui/states";
 
 export default function DashboardPage() {
   const me = useMe();
   const ws = useWorkspaces();
-  const gh = me.data?.github;
   const list = ws.data ?? [];
 
   return (
@@ -26,19 +26,10 @@ export default function DashboardPage() {
         <Button asChild variant="purple"><Link href="/workspaces/new"><Plus size={18} weight="bold" /> New workspace</Link></Button>
       </div>
 
-      {gh && gh.status !== "connected" && (
-        <div role="status" className="flex flex-wrap items-center gap-3 rounded-[24px] border-2 border-ink bg-sun-soft p-4 shadow-pop">
-          <Warning size={22} weight="duotone" className="text-sun-deep" />
-          <p className="flex-1 text-sm font-semibold">GitHub is not connected. You can run research, but you must connect GitHub before any push.</p>
-          <Button asChild size="sm" variant="outline"><Link href="/profile">Connect GitHub</Link></Button>
-        </div>
-      )}
-
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard label="Workspaces" value={ws.data ? list.length : "—"} icon={<Flask size={18} weight="duotone" />} />
         <StatCard label="Runs in progress" value={ws.data ? list.filter((w) => w.latest_run && ["running", "waiting_approval", "queued", "paused"].includes(w.latest_run.status)).length : "—"} tone="sky" icon={<Flask size={18} weight="duotone" />} />
         <StatCard label="Finished runs" value={ws.data ? list.filter((w) => w.latest_run?.status === "succeeded").length : "—"} tone="mint" icon={<Flask size={18} weight="duotone" />} />
-        <StatCard label="Push repository" value={<span className="text-base">{gh?.default_repo ?? "Not set"}</span>} tone="sun" icon={<GithubLogo size={18} weight="duotone" />} hint={gh?.status === "connected" ? "GitHub connected" : "GitHub not connected"} />
       </div>
 
       <section>
@@ -62,9 +53,10 @@ export default function DashboardPage() {
               {list.map((w) => {
                 const st = w.latest_run ? runStatusMeta[w.latest_run.status] : null;
                 return (
-                  <Link key={w.id} href={`/workspaces/${w.id}`} className="block rounded-[28px]">
+                  <div key={w.id} className="group relative">
+                  <Link href={`/workspaces/${w.id}`} className="block rounded-[28px]">
                     <Card interactive className="h-full p-5">
-                      <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-start justify-between gap-2 pr-10">
                         <h3 className="line-clamp-2 text-lg font-bold">{w.title}</h3>
                         {st ? <Badge tone={st.tone} solid>{st.label}</Badge> : <Badge>No run yet</Badge>}
                       </div>
@@ -76,6 +68,8 @@ export default function DashboardPage() {
                       </div>
                     </Card>
                   </Link>
+                  {(w.role === undefined || w.role === "owner") && <DeleteWorkspaceButton id={w.id} title={w.title} className="absolute right-3 top-3 z-10" />}
+                  </div>
                 );
               })}
             </div>

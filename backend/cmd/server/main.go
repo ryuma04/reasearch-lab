@@ -18,7 +18,6 @@ import (
 	"github.com/ryuma04/tapu-sena/backend/internal/bus"
 	"github.com/ryuma04/tapu-sena/backend/internal/config"
 	"github.com/ryuma04/tapu-sena/backend/internal/explorer"
-	"github.com/ryuma04/tapu-sena/backend/internal/githubpush"
 	"github.com/ryuma04/tapu-sena/backend/internal/hfpublish"
 	"github.com/ryuma04/tapu-sena/backend/internal/httpx"
 	"github.com/ryuma04/tapu-sena/backend/internal/proof"
@@ -68,7 +67,6 @@ func run() error {
 	sbx.Startup(ctx)
 	proofSvc := proof.New(st)
 	rl := ratelimit.New(b.Redis, cfg.RateLimits)
-	pushSvc := githubpush.New(cfg, st, b, authSvc)
 	voiceSvc := voice.New(cfg, st, agents)
 	explorerSvc := explorer.New(cfg, st, b)
 
@@ -109,6 +107,7 @@ func run() error {
 		r.Get("/workspaces", h(wsSvc.List))
 		r.Get("/workspaces/{id}", h(wsSvc.Get))
 		r.Patch("/workspaces/{id}", h(wsSvc.Update))
+		r.Delete("/workspaces/{id}", h(wsSvc.Delete))
 		r.Post("/workspaces/{id}/uploads", h(wsSvc.CreateUpload))
 		r.Get("/workspaces/{id}/uploads", h(wsSvc.ListUploads))
 		r.Get("/workspaces/{id}/uploads/{uploadId}/file", h(wsSvc.DownloadUpload))
@@ -135,9 +134,6 @@ func run() error {
 		r.Get("/runs/{id}/file", h(runSvc.File))
 		r.Post("/runs/{id}/whatif", h(runSvc.AskWhatIf))
 		r.Get("/runs/{id}/whatif", h(runSvc.ListWhatIf))
-		r.Post("/runs/{id}/push", h(pushSvc.Handle))
-		r.Get("/runs/{id}/pushes", h(pushSvc.List))
-		r.Get("/runs/{id}/push/preview", h(pushSvc.Preview))
 		r.Get("/metrics/{id}/proof", h(runSvc.MetricProof))
 		r.Get("/papers/{id}/pdf", h(runSvc.PaperPDF))
 
@@ -164,14 +160,13 @@ func run() error {
 		r.Post("/voice/text", h(voiceSvc.Text))
 	})
 
-	// Internal routes: agent worker and n8n only (X-Internal-Token)
+	// Internal routes: agent worker only (X-Internal-Token)
 	r.Route("/internal", func(r chi.Router) {
 		r.Use(authSvc.RequireInternal)
 		r.Post("/sandbox/exec", h(sbx.HandleExec))
 		r.Post("/proof/check", h(proofSvc.Handle))
 		r.Post("/ratelimit/acquire", h(rl.Handle))
 		r.Get("/ratelimit/usage", h(rl.Usage))
-		r.Post("/push/callback", h(pushSvc.Callback))
 	})
 
 	srv := &http.Server{Addr: cfg.Addr, Handler: r, ReadHeaderTimeout: 10 * time.Second}
@@ -214,8 +209,6 @@ func health(cfg *config.Config, st *store.Store, b *bus.Bus, agents *agentsclien
 		sb["docker"] = sb["available"]
 		sb["ok"] = sb["available"] == true && sb["image_present"] == true
 		out["sandbox"] = sb
-		n8n := map[string]any{"configured": cfg.N8NWebhookURL != "", "direct_fallback": cfg.PushDirectFallback}
-		out["n8n"] = n8n
 		out["credentials"] = map[string]any{
 			"github_oauth": cfg.GitHubConfigured(), "groq": cfg.GroqAPIKey != "", "gemini": cfg.GeminiAPIKey != "",
 			"dev_login": cfg.DevLoginEnabled,

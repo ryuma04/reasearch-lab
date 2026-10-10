@@ -95,7 +95,7 @@ export function CommandPanel({ runId }: { runId: string }) {
           await runApi.agentAction(target, "run", { action: "instruct", instruction: (intent.instruction as string) || heard || "" });
           break;
         case "push":
-          setResult("Open the Publish page to review the secret scan and approve the push.");
+          setResult("Open the Publish page to review the secret scan and start the Hugging Face publish.");
           setIntent(null);
           return;
         default:

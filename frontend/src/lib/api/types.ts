@@ -118,6 +118,7 @@ export interface WorkspaceDetail extends Workspace {
 
 /** GET /workspaces (@proposed) — list for the dashboard. */
 export interface WorkspaceSummary extends Workspace {
+  role?: WorkspaceRole;
   latest_run?: Run | null;
   repo_url?: string | null;
   paper_count?: number;

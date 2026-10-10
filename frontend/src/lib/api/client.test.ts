@@ -69,6 +69,11 @@ describe("request", () => {
     __setTransport(async () => new Response(null, { status: 204 }));
     await expect(request(ENDPOINTS.disconnectGithub)).resolves.toBeUndefined();
   });
+
+  it("returns an empty string (never undefined) for an empty text file such as an empty log", async () => {
+    __setTransport(async () => new Response("", { status: 200, headers: { "content-type": "text/plain", "content-length": "0" } }));
+    await expect(request<string>(ENDPOINTS.fileContent, { params: { id: "r" }, query: { path: "logs/install-71.log" }, responseType: "text" })).resolves.toBe("");
+  });
 });
 
 describe("helpers", () => {

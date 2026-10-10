@@ -16,7 +16,7 @@ from pathlib import Path
 
 import httpx
 
-from . import bus, db, llm, recipes
+from . import bus, db, llm, recipes, sources as code_sources
 from .config import settings as cfg
 from .observer import edge, node
 from .project import pdir
@@ -335,12 +335,22 @@ def find_sources(run_id: int, workspace_id: int, docs: list[PaperDoc], recipe) -
                                 "official": True, "licence": "CC BY-SA 3.0", "size": "~12 MB", "fits_budget": True,
                                 "how": "torchvision.datasets.MNIST(download=True)"})
     for d in docs:
-        if not out["repositories"]:
-            out["repositories"] += _search_github(d)
         out["related_papers"] += _related_papers(d)
+    # The researcher's repository stays the reference; alternatives (GitHub and Hugging Face) are found even when
+    # one was supplied and every candidate is compared with the same evidence-based criteria.
+    code = _assess_code(docs, [r["url"] for r in out["repositories"] if r.get("user_provided")])
+    if code:
+        out["code_assessment"] = code
+        if not any(r.get("user_provided") for r in out["repositories"]):
+            out["repositories"] += [{"url": a["url"], "name": a["name"], "stars": a.get("stars"), "licence": a.get("licence", "none"),
+                                     "official": bool(a.get("criteria") and a["criteria"][0]["points"] == 30), "host": a["host"],
+                                     "score": a.get("score")} for a in code["alternatives"] if a.get("mentions_paper")][:3]
+    found = bool(code and (code.get("recommended") or any(a.get("mentions_paper") for a in code.get("alternatives", []))))
     official = [r for r in out["repositories"] if r.get("official")]
     if recipe:
-        out["recommendation"] = ("No official code is published for this paper; we recommend a clean re-implementation "
+        out["recommendation"] = ("Code that cites this paper exists (see the code comparison below), but we recommend a clean re-implementation "
+                                 "with the official dataset loader from torchvision." if found else
+                                 "No code citing this paper was found; we recommend a clean re-implementation "
                                  "with the official dataset loader from torchvision.")
         if out["related_papers"]:
             out["recommendation"] += f" A newer related paper ('{out['related_papers'][0]['title']}') can be a what-if branch."
@@ -350,6 +360,8 @@ def find_sources(run_id: int, workspace_id: int, docs: list[PaperDoc], recipe) -
         out["recommendation"] = "Community code exists but is not confirmed official; re-implement and use it only as a reference."
     else:
         out["recommendation"] = "No code found; re-implement from the paper."
+    if code and code.get("summary") and code["verdict"] not in ("no_alternative_found",):
+        out["recommendation"] += " " + code["summary"]
     return out
 
 
@@ -387,23 +399,18 @@ def _dataset_info(up: dict) -> dict:
     return info
 
 
-def _search_github(doc: PaperDoc) -> list[dict]:
-    if not doc.title:
-        return []
+def _assess_code(docs: list[PaperDoc], user_urls: list[str]) -> dict | None:
+    """Evidence-based comparison of the supplied repository and alternatives; never raises into the research run."""
+    d = docs[0] if docs else None
+    if d is None or not (d.title or d.arxiv_id):
+        return None
     try:
-        resp = HTTP.get("https://api.github.com/search/repositories",
-                        params={"q": f'"{doc.title[:80]}" in:readme,description', "sort": "stars", "per_page": 3}, timeout=10)
-        if resp.status_code != 200:
-            return []
-        items = resp.json().get("items", [])
-    except httpx.HTTPError:
-        return []
-    out = []
-    for it in items:
-        readme_mentions = doc.arxiv_id and doc.arxiv_id in (it.get("description") or "")
-        out.append({"url": it["html_url"], "name": it["full_name"], "stars": it["stargazers_count"],
-                    "licence": (it.get("license") or {}).get("spdx_id") or "none", "official": bool(readme_mentions)})
-    return out
+        return code_sources.assess(d.title, d.arxiv_id, user_urls)
+    except Exception:  # noqa: BLE001 - discovery is an enhancement, the brief must still be written
+        log.exception("code source assessment failed")
+        return {"verdict": "insufficient_evidence", "recommended": None, "original": [], "alternatives": [], "comparison": [],
+                "advantages": [], "tradeoffs": [], "confidence": "none", "limitations": ["The code source assessment failed to run"],
+                "summary": "The code source comparison could not be completed, so no alternative is recommended."}
 
 
 def _related_papers(doc: PaperDoc) -> list[dict]:

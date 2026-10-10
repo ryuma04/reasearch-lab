@@ -15,3 +15,5 @@ backend/sandbox-testdata/
 backend/bin/
 frontend/.next-*/
 apps/
+*.log
+backend/out.txt

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -94,6 +95,38 @@ func (s *Store) UpdateWorkspace(ctx context.Context, id int64, title, budget, no
 			compute_budget = COALESCE($3, compute_budget),
 			note = COALESCE($4, note)
 		WHERE w.id=$1 RETURNING `+wsCols, id, title, budget, note))
+}
+
+// ErrWorkspaceBusy is returned when a workspace cannot be deleted because a run is still executing.
+var ErrWorkspaceBusy = errors.New("workspace has a run in progress")
+
+// DeleteWorkspace removes a workspace. Every table below it (uploads, papers, runs and their events, metrics,
+// executions, explorer analyses, publications, shares, notes) is ON DELETE CASCADE. The workspace row is locked
+// while the check runs, and it refuses while a run is queued, running or paused.
+func (s *Store) DeleteWorkspace(ctx context.Context, id int64) error {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op after Commit
+	if _, err := tx.Exec(ctx, `SELECT 1 FROM workspaces WHERE id=$1 FOR UPDATE`, id); err != nil {
+		return err
+	}
+	var busy bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM runs WHERE workspace_id=$1 AND status IN ('running','queued','paused'))`, id).Scan(&busy); err != nil {
+		return err
+	}
+	if busy {
+		return ErrWorkspaceBusy
+	}
+	tag, err := tx.Exec(ctx, `DELETE FROM workspaces WHERE id=$1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return tx.Commit(ctx)
 }
 
 type Upload struct {

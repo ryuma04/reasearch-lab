@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/ryuma04/tapu-sena/backend/internal/auth"
@@ -239,6 +241,35 @@ func (s *Service) Update(w http.ResponseWriter, r *http.Request) error {
 	}
 	httpx.JSON(w, http.StatusOK, ws)
 	return nil
+}
+
+// DELETE /workspaces/{id} — owner only. Removes the workspace with its runs, results and uploaded files.
+// It refuses (409) while a run is executing so no agent keeps writing into a workspace that no longer exists.
+func (s *Service) Delete(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.IDParam(r, "id")
+	if err != nil {
+		return err
+	}
+	if _, err := Access(r.Context(), s.store, id, "owner"); err != nil {
+		return err
+	}
+	if err := s.store.DeleteWorkspace(r.Context(), id); err != nil {
+		if errors.Is(err, store.ErrWorkspaceBusy) {
+			return httpx.Errorf(http.StatusConflict, "A run is still in progress in this workspace. Stop it first, then delete the workspace.")
+		}
+		return err
+	}
+	// The database rows are gone; the files are cleaned up best-effort (the path is built from the numeric id only).
+	if err := os.RemoveAll(workspaceDir(s.cfg.DataDir, id)); err != nil {
+		slog.Warn("workspace deleted but its files could not be fully removed", "workspace", id, "err", err)
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+// workspaceDir is where a workspace's uploads and run folders live under DATA_DIR.
+func workspaceDir(dataDir string, id int64) string {
+	return filepath.Join(dataDir, "workspaces", strconv.FormatInt(id, 10))
 }
 
 // POST /workspaces/{id}/uploads

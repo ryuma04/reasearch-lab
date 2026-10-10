@@ -11,7 +11,7 @@ const STEPS = [
   { n: "01", title: "Give it a paper", body: "Upload a PDF or paste an arXiv link. Dataset, repo and a note are optional.", Icon: FileMagnifyingGlass, tone: "lavender" },
   { n: "02", title: "Approve the plan", body: "The Research Agent extracts every claim with its page. You approve, edit or reject the plan.", Icon: MapTrifold, tone: "sun" },
   { n: "03", title: "Watch it reproduce", body: "Code is written, run and repaired inside a locked-down sandbox — live, with a reason for every step.", Icon: Cpu, tone: "sky" },
-  { n: "04", title: "Get proof, not prose", body: "A claim-by-claim scorecard, a tested explanation of every gap, what-if branches, and a GitHub push.", Icon: SealCheck, tone: "mint" },
+  { n: "04", title: "Get proof, not prose", body: "A claim-by-claim scorecard, a tested explanation of every gap, what-if branches, and a Hugging Face publish.", Icon: SealCheck, tone: "mint" },
 ] as const;
 
 const FEATURES: { title: string; body: string; Icon: typeof Brain; tone: Tone }[] = [
@@ -130,7 +130,7 @@ export default function LandingPage() {
               <h2 className="mt-5 text-3xl font-semibold sm:text-[2.5rem] sm:leading-[1.1]">A research control room.</h2>
               <p className="mt-4 text-white/75">Every agent is a card with what it is doing right now, <em>why</em> it is doing it, and what it has cost. Pause, stop, retry or give an instruction — at any step.</p>
               <div className="mt-6 flex flex-wrap gap-2">
-                {["Research", "Plan approval", "Coding", "Testing", "What-ifs", "Push"].map((s, i) => (
+                {["Research", "Plan approval", "Coding", "Testing", "What-ifs", "Publish"].map((s, i) => (
                   <span key={s} className={i < 3 ? "rounded-full border-2 border-white bg-purple px-3 py-1 text-xs font-bold" : "rounded-full border-2 border-white/30 px-3 py-1 text-xs font-bold text-white/60"}>{s}</span>
                 ))}
               </div>

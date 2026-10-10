@@ -105,8 +105,9 @@ export async function request<T>(def: EndpointDef, opts: RequestOptions = {}): P
     throw new ApiError({ kind, status: res.status, message: message ?? kind, code, fields, endpoint: def });
   }
 
+  // An empty text file (e.g. an empty log) is a valid "" — React Query rejects undefined query data.
+  if (opts.responseType === "text") return (res.status === 204 ? "" : await res.text()) as T;
   if (res.status === 204 || res.headers.get("content-length") === "0") return undefined as T;
-  if (opts.responseType === "text") return (await res.text()) as T;
   if (!isJson) {
     const text = await res.text();
     if (!text) return undefined as T;

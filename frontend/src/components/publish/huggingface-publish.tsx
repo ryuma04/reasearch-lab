@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowSquareOut, CheckCircle, CircleNotch, Lock, Globe, UploadSimple, WarningCircle } from "@phosphor-icons/react";
 import { isApiError, userMessage } from "@/lib/api/errors";
 import { hfApi } from "@/lib/api/services";
@@ -23,6 +23,21 @@ function useDebounced<T>(v: T, ms = 500) {
   return d;
 }
 
+const NAME_PART = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,94}[A-Za-z0-9])?$/;
+
+/** Mirrors the server's rule (hfpublish.ValidateRepoName) so a half-typed name is explained inline, not sent. */
+export function repoNameProblem(name: string): string | null {
+  if (!name) return null;
+  const parts = name.split("/");
+  if (parts.length > 2) return "Use a name like my-model or owner/my-model.";
+  for (const p of parts) {
+    if (!NAME_PART.test(p) || p.includes("--") || p.includes("..")) {
+      return `"${p}" is not a valid Hugging Face name: start and end with a letter or digit; use letters, digits, '-', '_' or '.' (no '--' or '..'), up to 96 characters.`;
+    }
+  }
+  return null;
+}
+
 /** Publish the run's verified model to the Hugging Face Hub. The upload runs on the server. */
 export function HuggingFacePublish({ runId }: { runId: string }) {
   const qc = useQueryClient();
@@ -31,6 +46,7 @@ export function HuggingFacePublish({ runId }: { runId: string }) {
   const [withCode, setWithCode] = React.useState(false);
   const [confirmed, setConfirmed] = React.useState(false);
   const repoQ = useDebounced(repo.trim());
+  const nameProblem = repoNameProblem(repo.trim());
 
   const list = useQuery({
     queryKey: ["run", runId, "hf", "list"],
@@ -43,7 +59,8 @@ export function HuggingFacePublish({ runId }: { runId: string }) {
   const plan = useQuery({
     queryKey: ["run", runId, "hf", "preview", repoQ, withCode],
     queryFn: ({ signal }) => hfApi.preview(runId, repoQ, withCode, signal),
-    enabled: !busy,
+    enabled: !busy && !repoNameProblem(repoQ), // a half-typed name is not sent to the server
+    placeholderData: keepPreviousData, // keep the form on screen while the name or options change
   });
   React.useEffect(() => {
     if (!repo && plan.data?.suggested_repo) setRepo(plan.data.suggested_repo);
@@ -59,6 +76,7 @@ export function HuggingFacePublish({ runId }: { runId: string }) {
   });
 
   const p = plan.data;
+  const problem = nameProblem ?? (plan.error && p ? errText(plan.error) : null);
   const blocked = !!p && p.blockers.length > 0;
   const fileCount = (p?.files.length ?? 0) + 1; // plus README.md
 
@@ -66,7 +84,7 @@ export function HuggingFacePublish({ runId }: { runId: string }) {
     <div className="space-y-5">
       <SectionTitle title="Publish to Hugging Face" />
       <Card className="space-y-5 p-6">
-        {plan.isPending ? <Skeleton className="h-40" /> : plan.error ? (
+        {plan.isPending ? <Skeleton className="h-40" /> : plan.error && !p ? (
           <ErrorState error={plan.error} title="Hugging Face" onRetry={() => void plan.refetch()} />
         ) : p && (
           <>
@@ -74,8 +92,10 @@ export function HuggingFacePublish({ runId }: { runId: string }) {
               <label className="space-y-1.5">
                 <span className="text-sm font-semibold">Repository name</span>
                 <Input value={repo} onChange={(e) => setRepo(e.target.value)} placeholder={p.suggested_repo} disabled={busy}
-                  aria-describedby="hf-repo-hint" />
-                <span id="hf-repo-hint" className="block text-xs text-muted">Use a name, or owner/name to publish to an organization.</span>
+                  aria-invalid={!!problem} aria-describedby="hf-repo-hint" />
+                {problem
+                  ? <span id="hf-repo-hint" role="alert" className="block text-xs font-semibold text-danger">{problem}</span>
+                  : <span id="hf-repo-hint" className="block text-xs text-muted">Use a name, or owner/name to publish to an organization.</span>}
               </label>
               <fieldset className="space-y-1.5">
                 <legend className="text-sm font-semibold">Visibility</legend>
@@ -138,7 +158,7 @@ export function HuggingFacePublish({ runId }: { runId: string }) {
               Upload these {fileCount} files to a {isPrivate ? "private" : "public"} Hugging Face repository{isPrivate ? "" : " that anyone can see"}.
             </label>
             {publish.error && <p role="alert" className="text-sm text-danger">{errText(publish.error)}</p>}
-            <Button size="lg" variant="purple" className="w-full" disabled={!confirmed || blocked || busy || !repo.trim()}
+            <Button size="lg" variant="purple" className="w-full" disabled={!confirmed || blocked || busy || !repo.trim() || !!problem}
               loading={publish.isPending} onClick={() => publish.mutate()}>
               <UploadSimple size={20} weight="bold" /> Publish to Hugging Face
             </Button>
