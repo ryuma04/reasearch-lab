@@ -13,7 +13,7 @@ We are building **one web workspace where a researcher gives a machine learning 
 
 **What the system does**
 
-- A **Team Manager** agent reads the task and decides which skills are needed. It starts with three core agents and creates extra specialist agents only when needed.
+- A **fixed pipeline** of agents does the work in a clear order: Research → plan approval → Coding → Testing → Gap Detective, plus What-If branches on request.
 - The **Research Agent** reads the paper, pulls out every important number the paper claims, and finds the code, datasets and other sources.
 - The **Coding Agent** writes the code, runs it inside a safe sandbox, and fixes its own errors.
 - The **Testing Agent** creates test cases, runs them, and compares our results with the paper's results, claim by claim.
@@ -106,16 +106,16 @@ These lines come directly from the problem statement. Our demo must clearly show
 | 2 | Investigate at least one meaningful **"what if?"** extension | What-If Branches (Hero 5) |
 | 3 | Explain **where and why** our results differ from the paper | Claim Scorecard + Gap Detective (Hero 1 and Hero 3) |
 | 4 | Run on **modest compute** (laptop CPU, free Kaggle/Colab) | Compute Budget Planner (Hero 8), local Docker sandbox, Kaggle push |
-| 5 | A **meta-controller** that decides needed capabilities and spawns new agents | Team Manager (Section 8.1) |
-| 6 | A **reward loop** using outcomes, compute cost and researcher feedback | Agent Scorecard (Section 9) |
-| 7 | Agents are **refined, merged, replaced or retired** | Team Evolution timeline (Section 9) |
-| 8 | Handle **dependencies, errors, data issues, hyperparameters** | Coding Agent repair loop + Environment Fixer specialist |
+| 5 | A **meta-controller** that decides needed capabilities and spawns new agents | Not covered: we chose a fixed pipeline of agents (Section 9) |
+| 6 | A **reward loop** using outcomes, compute cost and researcher feedback | Not covered: no agent scoring in the fixed pipeline (Section 9) |
+| 7 | Agents are **refined, merged, replaced or retired** | Not covered: the agents are fixed (Section 9) |
+| 8 | Handle **dependencies, errors, data issues, hyperparameters** | Coding Agent repair loop (including version-conflict fixes) + labelled settings |
 | 9 | **Compare multiple papers** or approaches | Paper vs Paper mode (Hero 10) |
 | 10 | Experiments are **not isolated**; learning is kept for the future | Lab Memory (Hero 6) |
 | 11 | Notes, Markdown, datasets, code, documents, records, **collaboration** | Workspace tabs, notes, shared live view, GitHub push |
-| 12 | **Mobile / remote control** | Mobile web app + Telegram bot with voice commands (Hero 9) |
+| 12 | **Mobile / remote control** | Mobile web app with voice and typed commands (Hero 9) |
 | 13 | Researcher can **inspect, intervene, approve, reject, redirect** | Approval checkpoints on every important step |
-| 14 | Interface shows **what, why, how well, and how the team evolves** — not just a chat | Live Agent Board, Research Map, Team Evolution view |
+| 14 | Interface shows **what, why, how well, and how the team evolves** — not just a chat | Live Agent Board, Research Map, Claim Scorecard (team evolution not covered) |
 
 ## 3. Real facts that prove the problem
 
@@ -160,9 +160,9 @@ These facts come from published studies. They show that the problem is real and 
 Our solution has five parts that work together.
 
 1. **The Workspace.** The place where the researcher uploads papers, data, code and notes, and later sees all results, notes and history. Each research project is one workspace.
-2. **The Agent Team.** A Team Manager plus three core agents (Research, Coding, Testing), each with two sub-agents, plus specialist agents that are created only when needed, plus an Observer that draws the live map.
+2. **The Agent Pipeline.** Three core agents (Research, Coding, Testing), each with two sub-agents, plus the Gap Detective and the What-If Planner, plus an Observer that draws the live map. The agents and their order are fixed.
 3. **The Sandbox.** A safe, isolated box (a Docker container) where all code is installed, written, run and tested. It has limits on CPU, memory, time and internet access, so nothing can harm the computer.
-4. **The Lab Memory.** A database of everything learned: errors and their fixes, settings that worked, which agent is good at what, and the result of every experiment.
+4. **The Lab Memory.** A database of everything learned: errors and their fixes, settings that worked, and the result of every experiment.
 5. **The Control Room.** The screens (web and mobile) where the researcher watches the agents live, sees why each decision was made, approves or rejects steps, asks "what if" questions, and receives a final report.
 
 ## 7. The full workflow, step by step
@@ -178,14 +178,14 @@ This is exactly what happens from start to end.
 
 **Step 3: A new tab opens: the Live Agent Board.** The researcher sees each agent as a card with its current task in one simple sentence, for example "Reading page 4: training settings" or "Installing PyTorch 2.3".
 
-**Step 4: The Team Manager plans.** It reads a quick summary of the paper and makes a **skills list** (for example: "load MNIST", "train a small neural network", "soft-target loss with temperature", "count test errors"). It checks which agents already have these skills, and creates specialist agents for any missing skill.
+**Step 4: The paper is fetched.** The system gets the paper in the most accurate form available: the arXiv LaTeX source and PDF for an arXiv link, or the uploaded PDF.
 
 **Step 5: The Research Agent works.**
 - Sub-agent 1 (Paper Reader) extracts the text, tables, equations and figures, and lists every result the paper claims (the **Claims List**), with page numbers.
 - Sub-agent 2 (Source Finder) finds and checks the official code, datasets and pretrained models (or studies the ones the user uploaded).
 - Output: a **Research Brief** — what the paper does, the exact settings, the Claims List, the sources found, missing details, and a recommendation (for example "the official code exists but needs an old library version; we recommend a clean re-implementation").
 
-**Step 6: Checkpoint 1 — the Research Map and plan approval.** Before any code is written, the researcher sees the **Research Map** (an Excalidraw-style drawing made by the Observer Agent) showing the paper, its claims, the sources found and how they connect. The researcher can approve the plan, edit it ("use only 10,000 training images"), or reject it.
+**Step 6: Checkpoint 1 — the Research Map and plan approval.** Before any code is written, the researcher sees the **Research Map** (an Excalidraw-style drawing made by the Observer Agent) showing the paper, its claims, the sources found and how they connect. The researcher also sees every setting the code will use, each labelled with its source (paper, our assumption, or changed to fit the compute budget). The researcher can approve the plan, edit it ("use only 10,000 training images"), or reject it.
 
 **Step 7: The Coding Agent works (inside the sandbox).**
 - Sub-agent 1 (Code Writer) writes the code and installs what it needs.
@@ -199,29 +199,29 @@ This is exactly what happens from start to end.
 
 **Step 9: If results differ, the Gap Detective runs.** It lists the differences between our setup and the paper's setup, runs quick small experiments to check which difference causes the gap, and writes a plain explanation.
 
-**Step 10: "What if" questions.** The researcher (or the Team Manager on its own) asks "what if" questions. Each becomes a branch with its own small experiment. Weak branches are stopped early to save compute.
+**Step 10: "What if" questions.** The researcher asks "what if" questions. Each becomes a branch with its own small experiment. Weak branches are stopped early to save compute.
 
-**Step 11: Results page.** The Live Agent Board changes into a Results page with one tab per agent: Research, Coding, Testing, plus Scorecard, What-Ifs, Team and Memory. Clicking an agent opens its full work in a new tab.
+**Step 11: Results page.** The Live Agent Board changes into a Results page with one tab per agent: Research, Coding, Testing, plus Scorecard, What-Ifs and Memory. Clicking an agent opens its full work in a new tab.
 
 **Step 12: Checkpoint 2 — push to GitHub.** The researcher approves. The system scans for secrets (passwords, keys), then an n8n workflow pushes the complete project to the researcher's GitHub repository with meaningful commits. The repository link appears in the profile and on the dashboard.
 
-**Step 13: The system learns.** All errors, fixes, settings, outcomes and agent scores are saved to the Lab Memory, and every agent's score is updated.
+**Step 13: The system learns.** All errors, fixes, settings and outcomes are saved to the Lab Memory, so the next run is faster.
 
 ## 8. The agents: who does what
 
-**An important point for the judges:** the problem statement says the system should not depend only on fixed, predefined agents. Our three agents (Research, Coding, Testing) are the **starting team**, not the whole team. The Team Manager adds, improves, merges and removes agents based on the paper and on how each agent performs. This section explains each agent; Section 9 explains how the team changes.
+Our agents form a **fixed pipeline**: the same agents run in the same order for every paper, and each one has a clear job. This section explains each agent; Section 9 explains why we chose a fixed pipeline.
 
-### 8.1 Team Manager (the meta-controller)
+### 8.1 The pipeline at a glance
 
-- **What it is:** The agent that leads the team. It does not write code or read the full paper itself. It plans, assigns work, watches progress and makes team decisions.
-- **What it does:**
-  1. Reads a short summary of the paper and the researcher's note.
-  2. Makes a **skills list** for this task.
-  3. Matches each skill to an existing agent, using the agent's skill tags and past score for that skill.
-  4. If no agent has a needed skill, it **creates a new specialist agent** from a template (see 8.6).
-  5. Decides the order of work and what can run in parallel.
-  6. After every task, updates each agent's score (Section 9).
-  7. Writes a one-line reason for every decision, shown on screen, for example: "Created 'Dataset Subset Planner' because the full dataset needs 3 hours on this laptop and no current agent handles data budgeting."
+| Order | Agent | Job |
+|---|---|---|
+| 1 | Research Agent (Paper Reader, Source Finder) | Reads the paper, builds the Claims List, finds sources, writes the Research Brief |
+| 2 | Checkpoint 1 | The researcher approves, edits or rejects the plan |
+| 3 | Coding Agent (Code Writer, Code Reviewer and Debugger) | Chooses and labels settings, writes the code, runs it in the sandbox, fixes errors |
+| 4 | Testing Agent (Test Designer, Test Runner) | Writes and runs tests, fills the Claim Scorecard |
+| 5 | Gap Detective | Runs only when a claim is Different: tests the reasons with small experiments |
+| on request | What-If Planner | Turns a what-if question into branches |
+| always | Observer | Draws the live Research Map from every event |
 
 ### 8.2 Agent 1: Research Agent (2 sub-agents)
 
@@ -251,10 +251,12 @@ This is exactly what happens from start to end.
 - Writes a clean project: data loading, model, training, evaluation, and a configuration file with every setting in one place.
 - Every script must write its results to a `metrics.json` file. This is how we guarantee that numbers come from real runs (Hero 2).
 - Writes a `requirements.txt` with exact versions so the run can be repeated.
+- Chooses every setting and labels its source: from the paper, our assumption (for details the paper does not state), or changed to fit the compute budget (for example a smaller, balanced subset of the data and fewer epochs).
 
 **Sub-agent 2.2: Code Reviewer and Debugger**
 - **Before running:** reviews the code against the Research Brief (for example "the paper uses temperature 20, but the code uses 2").
 - **After running:** reads errors, finds the cause and fixes it. It first searches the Lab Memory for the same error; if a known fix exists, it applies that fix immediately.
+- If installation fails twice (version conflicts), it relaxes library version pins and finds compatible versions.
 - Stops after a set number of failed tries (for example 5) and asks the researcher for help, with a clear description of the problem.
 
 **Languages:** Python is the main language, because almost all ML research code is in Python. We also prepare a second sandbox image for **R** (common in statistics papers). We keep it to these two to stay reliable.
@@ -285,62 +287,25 @@ This is exactly what happens from start to end.
 - **When the user sees it:** live during the run, and especially at Checkpoint 1, after the Research Agent and before the Coding Agent, as requested.
 - **Why it matters:** The problem statement says the interface must make clear what the agents are doing and why. A drawing is much easier to understand than a long log.
 
-### 8.6 Specialist agents (created only when needed)
+### 8.6 Gap Detective and What-If Planner
 
-The Team Manager creates these from templates when it finds a missing skill. Examples:
-
-| Specialist | When it is created | What it does |
+| Agent | When it runs | What it does |
 |---|---|---|
-| Environment Fixer | Installation fails twice (version conflicts) | Finds compatible library versions and fixes the environment |
-| Dataset Subset Planner | The dataset is too big for the compute budget | Picks a smaller, balanced subset and records this choice as an assumption |
-| Hyperparameter Scout | The paper does not state an important setting | Runs a few quick small trials to choose a good value |
-| Domain Specialist (for example "Graph Neural Networks for crystals") | The paper is in a field none of the agents has handled | Gets field-specific instructions and tools (for example `pymatgen` for materials papers) |
-| Gap Detective | A claim is marked "Different" | Tests the reasons for the difference (Hero 3) |
+| Gap Detective | A claim is marked "Different" | Tests the reasons for the difference with small one-change experiments (Hero 3) |
+| What-If Planner | The researcher asks a what-if question | Turns the question into branches and runs them with successive halving (Hero 5) |
 
-A specialist is not hard-coded as a separate program. It is a **recipe** (a small record) with: its name, its instructions, the tools it may use, which AI model it uses, and its skill tags. This is what makes creating, changing, merging and retiring agents easy and safe.
+## 9. Why a fixed pipeline (a deliberate decision)
 
-## 9. How the agent team evolves (the reward loop)
+The problem statement asks for a meta-controller that spawns new agents, a reward loop that scores agents, and agents that are refined, merged, replaced or retired. **We decided not to build these.** Our agents and their order are fixed.
 
-This section answers the problem statement's request that agents be "evaluated through a meaningful reward loop", and that strong agents are refined while weak ones are "merged, replaced, or retired".
+- **Why:** a fixed pipeline is simpler to build, test and explain, and it behaves the same way on every run, which matters for a live demo. Our effort goes into what makes results trustworthy: every number has proof, differences are tested, and fixes are remembered.
+- **What this means for judging:** checklist rows 5, 6 and 7 (Section 2.3) are not covered.
+- **What still improves over time:** the Lab Memory. Error fixes are reused, and settings that worked are remembered for similar papers.
 
-### 9.1 The Agent Scorecard
+### 9.1 Researcher control
 
-After every task, each agent that worked on it gets a score from 0 to 1:
-
-```
-score = 0.5 × outcome  +  0.2 × researcher feedback  −  0.2 × cost  −  0.1 × wasted tries
-```
-
-- **Outcome (50%):** Did the work help? For example: the code ran, the tests passed, a claim matched, a bug was truly fixed, a source it found was actually used.
-- **Researcher feedback (20%):** thumbs up or down from the researcher on that agent's work (neutral if none given).
-- **Cost (20%):** AI tokens used plus sandbox time used, compared with the average for that kind of task.
-- **Wasted tries (10%):** failed attempts, repeated errors, or work that was thrown away.
-
-The score is saved per agent **and per skill**, so the system learns, for example, that one agent is good at "PyTorch training" but weak at "data cleaning".
-
-### 9.2 The life of an agent
-
-| Stage | Rule (simple version) | What it means |
-|---|---|---|
-| **Trial** | Every new specialist starts here | It gets small tasks first |
-| **Active** | Average score ≥ 0.6 after 3 tasks | It is trusted with normal tasks |
-| **Refined** | Score drops below 0.4 on 3 tasks in a row | The Team Manager rewrites its instructions using its own failure notes, then gives it another chance |
-| **Merged** | Two agents do almost the same job (their skills and instructions overlap strongly) | They are combined into one agent to reduce cost |
-| **Replaced** | A newer agent does the same skill better and cheaper | The new one takes over that skill |
-| **Retired** | Still below 0.4 after being refined | It is removed from the team; its recipe and history are kept in the archive |
-
-Every change appears on the **Team Evolution timeline** with a reason, for example: "Retired 'Hyperparameter Scout v1': average score 0.31 over 4 tasks; it used 3 times more compute than 'Hyperparameter Scout v2' for similar results."
-
-### 9.3 How the Team Manager gets better over time
-
-- It records which agent was chosen for which skill and the score that followed.
-- For the next task, it prefers agents with a higher past score for the needed skill, but sometimes tries a newer agent, so it does not get stuck with the same choices. (This idea is similar to research on self-improving agents such as the Darwin Gödel Machine, which keeps an archive of agent versions instead of only the latest one.)
-- The researcher can always override a choice ("use the other agent for this").
-
-### 9.4 Researcher control
-
-- Every agent card has buttons: **Pause, Stop, Retry, Give instruction, Thumbs up, Thumbs down.**
-- The researcher can approve or reject the Team Manager's decisions, such as creating or retiring an agent.
+- Every agent card has buttons: **Pause, Stop, Retry, Give instruction.**
+- The researcher approves or rejects the plan, long runs and the GitHub push.
 
 ## 10. Must-build features (required by the problem statement)
 
@@ -348,20 +313,18 @@ These features are not optional. Each one comes from a line in the problem state
 
 1. **Login with GitHub, profile and GitHub connection** — account details, connection status, choose or create a repository, revoke access.
 2. **Workspace with uploads** — paper(s) required; dataset, repository and note optional; compute budget choice.
-3. **Team Manager with skills list and specialist creation** — Section 8.1.
-4. **Research, Coding and Testing agents with sub-agents** — Sections 8.2 to 8.4.
-5. **Safe sandbox execution** — all code runs inside Docker with limits.
-6. **Automatic error repair** — the write → run → fix loop.
-7. **Claim Scorecard** — our numbers vs the paper's numbers, claim by claim.
-8. **Explanation of differences** — the Gap Detective.
-9. **At least one "what if" extension** — What-If Branches.
-10. **Agent Scorecard and Team Evolution** — the reward loop.
-11. **Lab Memory** — learning that carries to future runs.
-12. **Live Agent Board** — what each agent is doing and why.
-13. **Approval checkpoints** — approve the plan, approve long runs, approve the GitHub push.
-14. **Mobile control** — the web app works on phones; plus a Telegram bot.
-15. **Push to GitHub through n8n** — with secret scanning and meaningful commits.
-16. **Research notes in Markdown** — a notes tab in every workspace; agents also write their notes here.
+3. **Research, Coding and Testing agents with sub-agents** — Sections 8.2 to 8.4.
+4. **Safe sandbox execution** — all code runs inside Docker with limits.
+5. **Automatic error repair** — the write → run → fix loop.
+6. **Claim Scorecard** — our numbers vs the paper's numbers, claim by claim.
+7. **Explanation of differences** — the Gap Detective.
+8. **At least one "what if" extension** — What-If Branches.
+9. **Lab Memory** — learning that carries to future runs.
+10. **Live Agent Board** — what each agent is doing and why.
+11. **Approval checkpoints** — approve the plan, approve long runs, approve the GitHub push.
+12. **Mobile control** — the web app works on phones, with voice and typed commands.
+13. **Push to GitHub through n8n** — with secret scanning and meaningful commits.
+14. **Research notes in Markdown** — a notes tab in every workspace; agents also write their notes here.
 
 ## 11. Hero features (our "wow" features)
 
@@ -412,7 +375,6 @@ These are the features judges will remember. Each one solves a real problem from
 - **Example:** "What if we use Fashion-MNIST instead of MNIST?" or "What if the temperature is 2, 5, 10 or 20?"
 - **Smart use of compute:** All branches start with a small budget. After the first short round, the weakest half is stopped and the rest continue (this method is called **successive halving**). This finds the best options using much less compute.
 - **Branches are real git branches:** each what-if branch is saved as its own branch in the researcher's GitHub repository, so nothing is lost.
-- **The Team Manager can also suggest what-ifs on its own,** based on the Gap Detective's findings and the Lab Memory, and asks the researcher for approval.
 - **Demo moment:** A tree view grows on screen: four branches start; two turn grey ("stopped early: clearly worse"); one turns green with the result.
 
 ### Hero 6: Lab Memory — the system learns from every run
@@ -420,9 +382,8 @@ These are the features judges will remember. Each one solves a real problem from
 - **What it is:** A memory of everything learned, saved in the database with search by meaning:
   - **Error memory:** an error message and the fix that worked, for example "`numpy` 2.0 breaks this old code → pin `numpy<2`".
   - **Settings memory:** settings that worked for a kind of model and a compute budget.
-  - **Agent memory:** which agent is good at which skill.
   - **Experiment memory:** every run, its settings and results.
-- **How it is used:** Before fixing an error, the Debugger searches the memory. Before planning, the Team Manager checks what worked before for similar papers.
+- **How it is used:** Before fixing an error, the Debugger searches the memory. Settings that worked before are suggested for similar papers.
 - **Demo moment (proof of learning):** We show the first run's timeline (for example 6 fix attempts, 9 minutes) next to a second run on a related paper (1 fix attempt, applied from memory in under a second, 4 minutes). A badge shows "Fixed from memory — learned in run #3".
 
 ### Hero 7: Live Research Map (Excalidraw)
@@ -440,11 +401,11 @@ These are the features judges will remember. Each one solves a real problem from
 
 ### Hero 9: Voice control from a phone, and an audio briefing
 
-- **Talk to your lab from your phone:** The researcher sends a voice note to our **Telegram bot** (free) or speaks in the mobile web app, for example: "How is the run going?" or "Try temperature 5 as a new branch."
+- **Talk to your lab from your phone:** The researcher speaks or types in the mobile web app, for example: "How is the run going?" or "Try temperature 5 as a new branch."
   1. **Groq Whisper** turns speech into text (very fast and free within limits).
-  2. The Team Manager understands the request.
+  2. A small, fast AI model understands the request.
   3. For anything that changes the work, it asks for a one-tap confirmation: **[Yes] [No]**.
-- **Notifications:** The bot sends messages such as "Run finished: 3 of 4 claims matched. Approve push to GitHub? [Yes] [No]".
+- **Notifications:** The web app shows messages such as "Run finished: 3 of 4 claims matched. Approve push to GitHub? [Yes] [No]".
 - **Audio briefing:** At the end of a run, the system creates a short spoken summary (about 90 seconds) of what happened: what was reproduced, what differed and why, and what to try next. The researcher can listen on the way home. The script is written by the AI from the database (numbers inserted from real results, Hero 2), and the voice is made by **Kokoro**, a free open-source text-to-speech model that runs on a normal CPU.
 - **Why it matters:** The problem statement asks for remote control "including through a mobile interface, while longer-running computation continues elsewhere".
 
@@ -527,7 +488,6 @@ We should **pre-run** the main and backup papers once before the demo, so the La
 | Loops (write code → run → error → fix → run again) | Graphs can have cycles; LangChain chains are mostly one-way |
 | Approval checkpoints (approve plan, approve push) | Built-in "interrupt": the graph pauses and waits for the researcher, then continues |
 | Save progress so a crash or restart does not lose work | Built-in checkpoints saved to Postgres |
-| Creating specialist agents while running | The `Send` feature starts any number of workers at run time; each worker loads an agent recipe from the database |
 | Several what-if branches in parallel | Parallel branches, then results are combined |
 | Live updates to the screen | Streaming of every step as an event |
 
@@ -535,15 +495,17 @@ We still use small parts of LangChain inside LangGraph (for example, the connect
 
 ## 15. AI plan: Groq and Gemini (both free)
 
-We use two free AI providers. Each job uses the model that fits it best. If one provider hits its limit, the request automatically moves to the other.
+We use two free AI providers. Each job uses the model that fits it best. Several API keys can be configured per provider: when one key hits its limit, the request moves to the next key, then to the other provider.
+
+**Note (checked on our accounts):** the Llama models are not available on our Groq account, and Gemini 2.5 Flash is not available to new users, so we use the models below.
 
 | Job | Model (free) | Why this model |
 |---|---|---|
-| Team Manager planning, Code Writer, Debugger | **Groq: GPT-OSS 120B** | Strong at reasoning and code; Groq is very fast, so the live board feels quick |
-| Code Reviewer (second opinion) | **Groq: Qwen3 32B** | A different model catches different mistakes |
-| Writing summaries, explanations, briefing scripts | **Groq: Llama 3.3 70B** | Good, clear writing |
-| Quick small decisions (classify an error, read a Telegram command) | **Groq: Llama 3.1 8B Instant** | Highest free daily limit; very fast |
-| Reading the full paper with figures and charts | **Gemini Flash** | Very long input (whole paper at once) and can read images |
+| Code Writer, Debugger, test design | **Groq: GPT-OSS 120B** | Strong at reasoning and code; Groq is very fast, so the live board feels quick |
+| Code Reviewer (second opinion) | **Groq: Qwen3.8 27B** | A different model catches different mistakes |
+| Writing summaries, explanations, briefing scripts | **Groq: GPT-OSS 20B** | Good, clear writing; fast |
+| Quick small decisions (classify an error, understand a voice or typed command) | **Groq: GPT-OSS 20B** | Very fast |
+| Reading the full paper with figures and charts | **Gemini 3 Flash** (falls back across Flash models) | Very long input (whole paper at once) and can read images |
 | Speech to text (voice notes) | **Groq: Whisper Large v3 (Turbo)** | Free, fast, accurate, many languages |
 | Text to speech (audio briefing) | **Kokoro** (runs on our CPU) | Free, open-source, no limits; browser voice as backup |
 | Memory search (meaning-based) | **FastEmbed with a small BGE model** (runs on our CPU) | Free, no limits, no internet needed |
@@ -594,7 +556,7 @@ We prepare Docker images in advance with common libraries already installed: Pyt
 ### 17.2 The push flow, step by step
 
 1. All code generation, review, execution and testing finish inside the sandbox.
-2. The researcher clicks **Approve push** (or taps Yes on Telegram).
+2. The researcher clicks **Approve push**.
 3. **If GitHub is not connected**, the system asks the researcher to connect it first and stops here.
 4. The Go backend collects the project into a bundle and runs a **secret scan with Gitleaks** (a free, open-source tool written in Go). If a password or API key is found, the push is blocked and the file and line are shown.
 5. Large files are handled: datasets are not pushed (a download script is pushed instead); model files over 50 MB go to a free Hugging Face model repository, with a link in the README.
@@ -602,8 +564,7 @@ We prepare Docker images in advance with common libraries already installed: Pyt
 7. The n8n workflow:
    - receives the bundle details through a webhook,
    - creates one **meaningful commit per stage** using GitHub's API: "Add research brief and claims", "Add implementation", "Add tests and results", "Add what-if: temperature sweep" (each what-if on its own branch),
-   - sends the commit links back to the Go backend,
-   - sends a Telegram message to the researcher with the repository link.
+   - sends the commit links back to the Go backend, which shows the repository link to the researcher.
 8. The repository URL appears on the **Profile page** and the **workspace dashboard**.
 
 **Security note for n8n:** n8n runs only inside our private Docker network (not open to the internet), and the push workflow is set to **not save execution data**, so the token is not stored inside n8n.
@@ -642,10 +603,10 @@ Everything below is free.
 | Frontend | **Next.js** (App Router) + **Tailwind CSS** + **shadcn/ui** | All screens; works on phone and laptop |
 | Research map | **Excalidraw** (open-source library) | Hand-drawn style live map |
 | Agent flow view | **React Flow** | Live graph of agents and their connections |
-| Charts | **Recharts** | Training curves, scorecards, agent scores |
+| Charts | **Recharts** | Training curves and scorecards |
 | PDF viewer | **PDF.js** (through `react-pdf`) | Showing the paper with highlighted claims |
-| Backend API | **Go** (standard `net/http` router, or the `chi` router) | Login, workspaces, uploads, live streaming, sandbox control, GitHub, Telegram, rate limiting |
-| Agent system | **Python** + **LangGraph** | Team Manager and all agents |
+| Backend API | **Go** (standard `net/http` router, or the `chi` router) | Login, workspaces, uploads, live streaming, sandbox control, GitHub, voice commands, rate limiting |
+| Agent system | **Python** + **LangGraph** | The fixed agent pipeline |
 | Paper reading | **Docling**, arXiv source files, Gemini Flash | Text, tables, equations, figures |
 | AI models | **Groq** and **Gemini** (free tiers) | Thinking, coding, writing, speech to text |
 | Text to speech | **Kokoro** | Audio briefing |
@@ -655,7 +616,7 @@ Everything below is free.
 | Remote compute | **Kaggle API** | Free GPU runs |
 | Automation | **n8n** (self-hosted, free) | GitHub push workflow |
 | Secret scanning | **Gitleaks** | Block passwords and keys before push |
-| Mobile control | Mobile web app (installable) + **Telegram Bot API** | Notifications, approvals, voice commands |
+| Mobile control | Mobile web app (installable) | Notifications, approvals, voice and typed commands |
 | Public link | **Cloudflare Tunnel** (free) | A public HTTPS link to our laptop for judges' phones |
 | Frontend hosting | **Vercel** (free) or run locally | Hosting the Next.js app |
 
@@ -670,8 +631,8 @@ Everything below is free.
                          └───────────────┬──────────────────────┘
                                          │ HTTPS + live stream (SSE)
                                          ▼
- Telegram ◀──────────────▶ ┌──────────────────────────────────────┐
- (voice, approvals)        │  Go backend                           │
+                           ┌──────────────────────────────────────┐
+                           │  Go backend                           │
                            │  • login (GitHub OAuth) • uploads     │
                            │  • live event stream  • rate limiter  │
                            │  • sandbox control    • secret scan   │
@@ -687,9 +648,9 @@ Everything below is free.
                 ┌──────────────────────────────┐      ▼
                 │ Python agent worker          │  ┌──────────────────────────┐
                 │ (LangGraph)                  │  │ Docker sandbox            │
-                │ Team Manager                 │─▶│ (one fresh container      │
-                │ Research · Coding · Testing  │  │  per run, with limits)    │
-                │ Observer · Specialists       │  └──────────────────────────┘
+                │ Research · Coding · Testing  │─▶│ (one fresh container      │
+                │ Gap Detective · What-If      │  │  per run, with limits)    │
+                │ Observer                     │  └──────────────────────────┘
                 └──────────────┬───────────────┘            │ (optional)
                                │                             ▼
                                ▼                        Kaggle (free GPU)
@@ -700,15 +661,15 @@ Everything below is free.
 **How a request flows, in simple words:**
 1. The researcher uploads a paper in the web app. The Go backend saves the file and creates a new run.
 2. Go puts a "start run" job into Redis.
-3. The Python worker picks up the job and starts the LangGraph graph (Team Manager first).
+3. The Python worker picks up the job and starts the LangGraph graph (Research Agent first).
 4. When an agent needs to run code, it asks the Go backend, which starts a sandbox container, runs the code and returns the output. Go controls the sandbox so that all safety rules are in one place.
 5. Every agent step sends a small event (for example "Coding Agent: installing PyTorch") to Redis.
 6. Go saves every event in PostgreSQL (for Run Replay) and streams it live to every open screen (researcher, teammates, judges).
-7. At a checkpoint, the graph pauses. The researcher approves on the web or on Telegram, and Go tells the worker to continue.
+7. At a checkpoint, the graph pauses. The researcher approves on the web (laptop or phone), and Go tells the worker to continue.
 
 ## 20. Live events: how the screen stays updated
 
-Every action by every agent creates one event. All live features (Live Agent Board, Research Map, Telegram messages, Run Replay) are built from the same events.
+Every action by every agent creates one event. All live features (Live Agent Board, Research Map, Run Replay) are built from the same events.
 
 ```json
 {
@@ -730,47 +691,36 @@ Every action by every agent creates one event. All live features (Live Agent Boa
 
 ```
 /
-├── apps/
-│   └── web/                     ← Next.js + Tailwind frontend
-│       ├── app/
-│       │   ├── (auth)/login/
-│       │   ├── profile/
-│       │   ├── workspaces/new/
-│       │   ├── workspaces/[id]/live/         ← Live Agent Board
-│       │   ├── workspaces/[id]/map/          ← Research Map
-│       │   ├── workspaces/[id]/results/      ← tabs: research, coding, testing,
-│       │   │                                    scorecard, what-ifs, team, memory, notes
-│       │   └── share/[token]/                ← read-only live view for judges
-│       └── components/
-├── services/
-│   ├── api/                     ← Go backend
-│   │   ├── cmd/server/main.go
-│   │   └── internal/
-│   │       ├── auth/            ← GitHub OAuth, sessions, token encryption
-│   │       ├── workspace/       ← workspaces, uploads, notes
-│   │       ├── runs/            ← runs, checkpoints, events, SSE
-│   │       ├── sandbox/         ← Docker control, limits
-│   │       ├── githubpush/      ← bundle, Gitleaks, n8n call, direct-push backup
-│   │       ├── telegram/        ← bot, voice notes, approvals
-│   │       ├── ratelimit/       ← AI usage counters
-│   │       └── store/           ← PostgreSQL queries
-│   └── agents/                  ← Python + LangGraph
-│       ├── graph.py             ← the main graph
-│       ├── manager/             ← Team Manager, skills list, scoring, evolution
-│       ├── research/            ← paper_reader.py, source_finder.py
-│       ├── coding/              ← writer.py, reviewer.py
-│       ├── testing/             ← test_designer.py, test_runner.py
-│       ├── observer/            ← events → Excalidraw elements
-│       ├── specialists/         ← agent recipe templates
-│       ├── memory/              ← embeddings, search
-│       └── llm/                 ← Groq / Gemini router and fallback
-├── sandbox-images/
-│   ├── python/Dockerfile
-│   └── r/Dockerfile
-├── n8n/
-│   └── github-push.json         ← exported n8n workflow
-├── docker-compose.yml           ← Postgres, Redis, n8n, API, agents
-└── allaboutourproject.md        ← this document
+├── frontend/                    ← Next.js + Tailwind frontend
+│   └── src/app/                 ← login, profile, workspaces (live board, map, results, replay), share
+├── backend/                     ← Go backend
+│   ├── cmd/server/main.go
+│   └── internal/
+│       ├── auth/                ← GitHub OAuth, sessions, token encryption
+│       ├── workspace/           ← workspaces, uploads, notes
+│       ├── runs/                ← runs, checkpoints, events, SSE, share links
+│       ├── sandbox/             ← Docker control, limits, metrics.json with proof
+│       ├── proof/               ← removes AI-written numbers that no run produced
+│       ├── githubpush/          ← bundle, Gitleaks, n8n call, direct-push backup
+│       ├── voice/               ← voice and typed commands (Groq Whisper)
+│       ├── ratelimit/           ← AI usage counters per API key
+│       └── store/               ← PostgreSQL queries and migrations
+├── agents/                      ← Python + LangGraph (FastAPI service + job worker)
+│   ├── app.py
+│   └── lab/
+│       ├── graph.py             ← the fixed pipeline
+│       ├── steps.py             ← the fixed agents
+│       ├── research.py          ← Paper Reader, Source Finder
+│       ├── coding.py            ← Code Writer, Code Reviewer and Debugger
+│       ├── testing.py           ← Test Designer, Test Runner, Claim Scorecard
+│       ├── gap.py · whatif.py   ← Gap Detective, What-If branches
+│       ├── observer.py          ← events → Research Map
+│       ├── memory.py            ← Lab Memory (embeddings, search)
+│       └── llm.py               ← Groq / Gemini router with API-key switching
+├── infra/sandbox-images/        ← python/ and r/ Dockerfiles
+├── n8n/github-push.json         ← exported n8n workflow
+├── docs/                        ← this document and design notes
+└── docker-compose.yml           ← Postgres, Redis, n8n, backend, agents
 ```
 
 ## 22. Database design
@@ -790,11 +740,7 @@ Every action by every agent creates one event. All live features (Live Agent Boa
 | `metrics` | id, run_id, name, value, log_file_hash, log_line |
 | `scorecard_entries` | id, run_id, claim_id, metric_id, difference, status (match / close / different), explanation |
 | `whatif_branches` | id, run_id, question, settings_change (JSON), status (running / stopped_early / done), result_metric_id |
-| `agents` | id, name, kind (core / specialist), stage (trial / active / refined / merged / replaced / retired), current_version_id |
-| `agent_versions` | id, agent_id, instructions, tools (JSON), model, skill_tags, created_reason |
-| `agent_tasks` | id, run_id, agent_id, skill, outcome, feedback, tokens, sandbox_seconds, wasted_tries, score |
-| `team_decisions` | id, run_id, decision (create / refine / merge / replace / retire / assign), agent_ids, reason |
-| `memory_items` | id, kind (error_fix / setting / experiment / agent_skill), text, details (JSON), embedding (vector), times_used, success_rate |
+| `memory_items` | id, kind (error_fix / setting / experiment), text, details (JSON), embedding (vector), times_used, success_rate |
 | `notes` | id, workspace_id, author (user or agent), markdown, updated_at |
 | `comments` | id, workspace_id, target_type, target_id, user_id, text |
 | `pushes` | id, run_id, repo_url, commit_urls (JSON), status, secret_scan_result |
@@ -815,16 +761,16 @@ Every action by every agent creates one event. All live features (Live Agent Boa
 | `GET /runs/{id}/stream` | Live event stream (SSE) |
 | `GET /runs/{id}/events` | All saved events (for Run Replay) |
 | `POST /runs/{id}/checkpoints/{name}` | Approve, edit or reject at a checkpoint |
-| `POST /runs/{id}/agents/{agent}/action` | Pause, stop, retry, instruct, thumbs up or down |
+| `POST /runs/{id}/agents/{agent}/action` | Pause, stop, retry, instruct |
 | `GET /runs/{id}/scorecard` | Claim Scorecard |
 | `GET /runs/{id}/settings` | Settings with their sources (Missing Details Log) |
 | `POST /runs/{id}/whatif` | Ask a what-if question |
-| `GET /agents` · `GET /agents/{id}/history` | Team and evolution history |
+| `GET /agents` | The fixed agents of the pipeline |
 | `GET /memory/search?q=` | Search the Lab Memory |
 | `GET/PUT /workspaces/{id}/notes` | Markdown notes |
 | `POST /runs/{id}/push` | Approve and start the GitHub push |
 | `POST /workspaces/{id}/share` | Create a read-only live link and QR code |
-| `POST /telegram/webhook` | Telegram messages and voice notes |
+| `POST /voice/command` · `POST /voice/text` | Understand a spoken or typed command from the mobile web app |
 | `POST /internal/sandbox/exec` | (Internal, used by agents only) run code in a sandbox |
 | `POST /internal/push/callback` | (Internal, used by n8n only) push result |
 
@@ -840,7 +786,6 @@ Limits change often; the numbers below are approximate, from public sources in 2
 | **Kaggle** | About 30 GPU hours per week (shown in your account) | Bigger runs |
 | **Semantic Scholar, OpenAlex, arXiv** | Free public APIs with fair-use limits | Finding papers, code and datasets |
 | **Hugging Face** | Free datasets, models and model hosting | Datasets, pretrained models, large model files |
-| **Telegram Bot API** | Free | Mobile control and notifications |
 | **Cloudflare Tunnel** | Free | Public link to our laptop |
 | **Vercel** | Free hobby plan | Frontend hosting |
 | **E2B** | One-time free credit for new accounts | Optional cloud sandbox backup |
@@ -859,7 +804,6 @@ Limits change often; the numbers below are approximate, from public sources in 2
    - **Testing** — test list with pass/fail, and the Claim Scorecard.
    - **Scorecard** — paper vs our numbers, with the PDF highlight view and Gap Detective explanation.
    - **What-ifs** — the branch tree and results.
-   - **Team** — agent scores, Team Evolution timeline, decisions with reasons.
    - **Memory** — what was learned in this run, and what was reused from earlier runs.
    - **Notes** — Markdown notes from the researcher and agents.
    - Clicking an agent card opens its full work in a new browser tab, as planned.
@@ -883,13 +827,13 @@ Limits change often; the numbers below are approximate, from public sources in 2
 |---|---|---|
 | 0:00–0:45 | The problem slide with 2 facts | "70% of researchers have failed to reproduce someone else's experiment. AI tools that try to help sometimes invent result numbers." |
 | 0:45–1:30 | Log in with GitHub, upload the Distillation paper, choose "Quick" budget | "The researcher gives only the paper. Everything else is optional." |
-| 1:30–2:30 | Live Agent Board: Team Manager creates the skills list and a "Dataset Subset Planner" specialist | "The team is not fixed. The manager just created a new agent, and here is why." |
+| 1:30–2:30 | Live Agent Board: the Research Agent reads the paper and builds the Claims List with page numbers | "Every agent shows what it is doing right now, and why." |
 | 2:30–3:15 | Research Map at Checkpoint 1; approve the plan | "Before any code is written, the researcher sees and approves the plan." |
 | 3:15–4:15 | Coding Agent hits an error and fixes it from memory; judges watch on their phones via the QR code | "This error was fixed in under a second, because the system learned it in an earlier run." |
 | 4:15–5:15 | Claim Scorecard: click a number, PDF highlight + log line; Gap Detective explanation | "Every number has proof. And when our result differs, we test why." |
-| 5:15–6:00 | Voice note on Telegram: "Try temperature 5 as a new branch"; What-If tree grows; weak branches stop early | "The researcher can control the lab from a phone, by voice." |
-| 6:00–6:40 | Team tab: an agent retired with its reason; GitHub repository with meaningful commits and the badge | "Agents are scored on results, cost and feedback. Everything ends in the researcher's GitHub." |
-| 6:40–7:00 | Closing line | "One workspace where an evolving AI team reproduces, tests, explains and extends research — on a laptop, for ₹0." |
+| 5:15–6:00 | Voice command in the mobile web app: "Try temperature 5 as a new branch"; What-If tree grows; weak branches stop early | "The researcher can control the lab from a phone, by voice." |
+| 6:00–6:40 | Memory tab: a fix reused from an earlier run; GitHub repository with meaningful commits and the badge | "The lab remembers what it learned. Everything ends in the researcher's GitHub." |
+| 6:40–7:00 | Closing line | "One workspace where a team of AI agents reproduces, tests, explains and extends research — on a laptop, for ₹0." |
 
 **Important:** we pre-run the full demo once on the same laptop. If the internet fails, we use Run Replay of the pre-recorded run, which looks exactly like a live run.
 
@@ -903,7 +847,7 @@ Limits change often; the numbers below are approximate, from public sources in 2
 | 4 | What existing tools miss | The table from Section 5 (short version) |
 | 5 | Our solution | The 5 parts from Section 6 in one diagram |
 | 6 | The workflow | Upload → Research → Map + approval → Code → Test → Gap → What-if → GitHub |
-| 7 | The evolving agent team | Team Manager, core agents, specialists, the score formula, the life stages |
+| 7 | The agent pipeline | Research, Coding, Testing, Gap Detective, What-If and the Observer, in order |
 | 8 | Our USP: every number has proof | Scorecard screenshot with the PDF highlight and log line |
 | 9 | Hero features | Gap Detective, Lab Memory, What-If Branches, Research Map, voice control, Paper vs Paper |
 | 10 | Architecture and tech stack | Diagram from Section 19, all free tools |
@@ -912,15 +856,14 @@ Limits change often; the numbers below are approximate, from public sources in 2
 
 ## 29. Judge questions and our answers
 
-- **"Your three agents are fixed. Isn't that what the problem statement says to avoid?"** — No. The three are the starting team. The Team Manager creates specialists from recipes when a skill is missing, and refines, merges, replaces or retires agents based on their scores. The Team tab shows every such decision with its reason.
+- **"Your agents are fixed. Isn't that what the problem statement says to avoid?"** — Yes, it is a deliberate trade-off. A fixed pipeline is simpler and behaves the same way on every run. We put our effort into trustworthy results: every number has proof, differences are tested, and fixes are remembered in the Lab Memory.
 - **"How do you know the AI didn't make up the results?"** — The AI is never allowed to write result numbers. Every number comes from `metrics.json` written by code that ran in the sandbox, saved with the run ID, commit and log fingerprint. Any number in AI-written text that is not in the database is removed.
-- **"What is the reward in your reward loop?"** — A score from 0 to 1 per task: 50% outcome, 20% researcher feedback, minus 20% cost, minus 10% wasted tries. It is saved per agent and per skill.
-- **"How does the system get better over time?"** — Three ways: error fixes are reused from Lab Memory; the Team Manager prefers agents with better past scores for each skill; settings that worked before are suggested for similar papers. We show a second run being faster than the first.
+- **"How does the system get better over time?"** — Through the Lab Memory: error fixes are reused, and settings that worked before are suggested for similar papers. We show a second run being faster than the first.
 - **"Is running AI-written code safe?"** — It runs only inside a fresh Docker container with CPU, memory, time and process limits, no internet during execution, a non-administrator user, and read-only inputs.
 - **"Why Go and Python both?"** — Go handles the web server, live streaming, sandbox control and security very efficiently. Python is needed because ML code and LangGraph are in Python. Each language does what it is best at.
-- **"What happens when Groq's free limit runs out?"** — The router switches to Gemini automatically. We also cache the paper reading and use small models for small tasks.
+- **"What happens when Groq's free limit runs out?"** — The router switches to the next API key, then to Gemini, automatically. We also cache the paper reading and use small models for small tasks.
 - **"Why are your results different from the paper?"** — (Show the Gap Detective.) Each difference is tested with a small experiment, and the explanation is backed by those results.
-- **"Can it work with other papers?"** — Yes. The paper is an input. For a new field, the Team Manager creates a domain specialist. We also have backup papers ready (Section 13.3).
+- **"Can it work with other papers?"** — Yes. The paper is an input. For a paper without a built-in recipe, the AI agents read it and write the code. We also have backup papers ready (Section 13.3).
 - **"What does it cost?"** — ₹0. Every tool is free or open-source, and compute is our laptop plus free Kaggle and Colab.
 - **"Why not just use ChatGPT?"** — Chat tools do not run the code end to end, do not test against the paper's claims, do not keep proof, do not learn across runs, and do not push a complete project to GitHub.
 
@@ -931,16 +874,16 @@ Limits change often; the numbers below are approximate, from public sources in 2
 | Person | Main work |
 |---|---|
 | **Member 1 — Frontend** | Next.js screens: upload, Live Agent Board, Results tabs, Scorecard with PDF highlight, mobile layout |
-| **Member 2 — Go backend** | Login and GitHub, workspaces, uploads, SSE events, sandbox control, rate limiter, Telegram bot |
-| **Member 3 — Agents** | LangGraph graph: Team Manager, Research, Coding, Testing, scoring and evolution, memory |
+| **Member 2 — Go backend** | Login and GitHub, workspaces, uploads, SSE events, sandbox control, rate limiter, voice commands |
+| **Member 3 — Agents** | LangGraph pipeline: Research, Coding, Testing, Gap Detective, What-If, memory |
 | **Member 4 — ML, sandbox and automation** | Sandbox images, demo paper runs, Gap Detective experiments, n8n workflow, Excalidraw map, PPT |
 
 **Order of building (most important first):**
 
 1. **Base (first quarter of the time):** docker-compose (Postgres, Redis, n8n), Go server with GitHub login, upload, a run that streams fake events to the Live Board.
 2. **Core loop (second quarter):** Paper Reader → Claims List; Code Writer → sandbox run → Debugger loop; `metrics.json` → Claim Scorecard. Get the Distillation paper working end to end.
-3. **What makes us win (third quarter):** Gap Detective, What-If Branches, Team Manager specialists and scoring, Lab Memory reuse, Research Map.
-4. **Polish and demo (last quarter):** GitHub push through n8n, Telegram voice, Live share link with QR, audio briefing, Run Replay, PPT, two full rehearsals.
+3. **What makes us win (third quarter):** Gap Detective, What-If Branches, Lab Memory reuse, Research Map.
+4. **Polish and demo (last quarter):** GitHub push through n8n, voice commands, Live share link with QR, audio briefing, Run Replay, PPT, two full rehearsals.
 
 **Rule:** after each step, the demo must still work end to end. We never leave the project in a broken state for more than one hour.
 
@@ -966,7 +909,7 @@ Limits change often; the numbers below are approximate, from public sources in 2
 | Database, queue, automation, sandbox (Postgres, Redis, n8n, Docker on our laptop) | ₹0 |
 | Compute (our laptop, free Kaggle and Colab) | ₹0 |
 | Hosting (Vercel free plan, Cloudflare Tunnel) | ₹0 |
-| GitHub, Telegram, Hugging Face, paper search APIs | ₹0 |
+| GitHub, Hugging Face, paper search APIs | ₹0 |
 | **Total** | **₹0** |
 
 **Optional spend (only if useful, within our ₹500 limit):** a cheap domain name for the first year (usually a few hundred rupees, prices vary) gives a fixed, clean link for the QR code. Without it, the free Cloudflare Tunnel link works but changes each time we restart it.
@@ -988,8 +931,6 @@ Limits change often; the numbers below are approximate, from public sources in 2
 - **Claim:** a result the paper reports, for example "74 test errors".
 - **Agent:** an AI program that works on a task on its own, using tools (for example, running code).
 - **Sub-agent:** a smaller agent that does one part of a bigger agent's job.
-- **Meta-controller (Team Manager):** the agent that decides which agents are needed and manages the team.
-- **Reward loop:** scoring each agent after each task and using the scores to improve the team.
 - **Sandbox:** an isolated box where code runs without being able to harm the computer.
 - **Docker / container:** a tool that creates such isolated boxes with exact software versions.
 - **LangGraph:** a free Python library to build teams of AI agents as a graph of steps, with loops, pauses for approval and saved progress.
