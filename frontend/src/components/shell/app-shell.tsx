@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { motion } from "motion/react";
 import * as Dropdown from "@radix-ui/react-dropdown-menu";
 import { useQueryClient } from "@tanstack/react-query";
-import { Brain, GithubLogo, House, Plus, SignOut, SquaresFour, User, UsersThree } from "@phosphor-icons/react";
+import { Brain, GithubLogo, House, Plus, SignOut, SquaresFour, User } from "@phosphor-icons/react";
 import { isApiError } from "@/lib/api/errors";
 import { authApi } from "@/lib/api/services";
 import { useMe } from "@/lib/hooks/queries";
@@ -18,7 +18,6 @@ import { Logo } from "./logo";
 
 const NAV = [
   { href: "/dashboard", label: "Lab", Icon: SquaresFour },
-  { href: "/team", label: "Team", Icon: UsersThree },
   { href: "/memory", label: "Memory", Icon: Brain },
   { href: "/profile", label: "Profile", Icon: User },
 ];

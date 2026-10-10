@@ -25,3 +25,6 @@ export const LIMITS = {
 } as const;
 
 export const REQUEST_TIMEOUT_MS = 30_000;
+
+/** Show email + password sign-in next to GitHub (backend EMAIL_LOGIN_ENABLED, on by default). */
+export const EMAIL_LOGIN = process.env.NEXT_PUBLIC_EMAIL_LOGIN !== "false";

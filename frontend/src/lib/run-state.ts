@@ -56,7 +56,7 @@ export const STAGES: { key: RunStage; label: string }[] = [
 const STAGE_SET = new Set<string>([...STAGES.map((s) => s.key), "done"]);
 
 /** Canonical display order for core agents; dynamic specialists follow. */
-const CORE_ORDER = ["manager", "research", "coding", "testing", "observer"];
+const CORE_ORDER = ["system", "research", "coding", "testing", "gap_detective", "whatif", "observer"];
 
 export function agentKey(agent: string): string {
   return (agent.split(".")[0] ?? agent).trim() || "unknown";

@@ -218,7 +218,7 @@ export async function mockTransport(url: string, init: RequestInit, def: Endpoin
       if (!sim) return err(404, "Run not found");
       const b = body as T.AgentActionRequest;
       const map: Record<string, string> = { pause: "agent_paused", resume: "agent_resumed", stop: "agent_stopped", retry: "task_started", instruct: "task_progress", thumbs_up: "task_progress", thumbs_down: "task_progress" };
-      const msg = b.action === "instruct" ? `Instruction received: ${b.instruction}` : b.action.startsWith("thumbs") ? `Researcher feedback: ${b.action === "thumbs_up" ? "👍" : "👎"}` : `Researcher action: ${b.action}`;
+      const msg = b.action === "instruct" ? `Instruction received: ${b.instruction}` : `Researcher action: ${b.action}`;
       emit(sim, { agent: p.agent!, type: map[b.action] ?? "task_progress", message: msg, why: "Researcher control (demo)" });
       return json({ agent: p.agent, action: b.action, accepted: true });
     }

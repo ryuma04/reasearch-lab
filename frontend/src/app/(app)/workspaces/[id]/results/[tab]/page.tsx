@@ -9,15 +9,15 @@ import { useBriefing, useScorecard } from "@/lib/hooks/queries";
 import { runApi } from "@/lib/api/services";
 import { isApiError } from "@/lib/api/errors";
 import { useSelectedRun } from "@/components/run/workspace-header";
-import { CodingTab, MemoryTab, NotesTab, ResearchTab, ScorecardTab, TeamTab, TestingTab, WhatIfTab } from "@/components/results/tabs";
+import { CodingTab, MemoryTab, NotesTab, ResearchTab, ScorecardTab, AgentsTab, TestingTab, WhatIfTab } from "@/components/results/tabs";
 import { claimStatusMeta, runStatusMeta } from "@/lib/status";
 import { cn, formatDateTime, shortId } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge, Card } from "@/components/ui/primitives";
 import { EmptyState } from "@/components/ui/states";
 
-const TABS = ["research", "coding", "testing", "scorecard", "whatifs", "team", "memory", "notes"] as const;
-const LABEL: Record<(typeof TABS)[number], string> = { research: "Research", coding: "Coding", testing: "Testing", scorecard: "Scorecard", whatifs: "What-ifs", team: "Team", memory: "Memory", notes: "Notes" };
+const TABS = ["research", "coding", "testing", "scorecard", "whatifs", "agents", "memory", "notes"] as const;
+const LABEL: Record<(typeof TABS)[number], string> = { research: "Research", coding: "Coding", testing: "Testing", scorecard: "Scorecard", whatifs: "What-ifs", agents: "Agents", memory: "Memory", notes: "Notes" };
 
 export default function ResultsPage() {
   const { id, tab } = useParams<{ id: string; tab: string }>();
@@ -68,7 +68,7 @@ export default function ResultsPage() {
       {tab === "testing" && <TestingTab runId={runId} />}
       {tab === "scorecard" && <ScorecardTab runId={runId} workspaceId={id} />}
       {tab === "whatifs" && <WhatIfTab runId={runId} readOnly={readOnly} />}
-      {tab === "team" && <TeamTab events={stream.events} />}
+      {tab === "agents" && <AgentsTab events={stream.events} />}
       {tab === "memory" && <MemoryTab runId={runId} />}
       {tab === "notes" && <NotesTab workspaceId={id} readOnly={readOnly} />}
     </div>

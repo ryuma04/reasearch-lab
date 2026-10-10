@@ -19,7 +19,7 @@ const FEATURES: { title: string; body: string; Icon: typeof Brain; tone: Tone }[
   { title: "No number without proof", body: "The AI never types a result. Every value comes from metrics.json written by code that actually ran.", Icon: ShieldCheck, tone: "mint" },
   { title: "Gap Detective", body: "When numbers differ, it runs small experiments to find out why — and says so in plain words.", Icon: Detective, tone: "coral" },
   { title: "What-if branches", body: "Ask “what if T=5?” — branches run in parallel; weak ones stop early with successive halving.", Icon: TreeStructure, tone: "sky" },
-  { title: "Evolving team", body: "A Team Manager creates, refines, merges and retires agents based on outcome, cost and your feedback.", Icon: UsersThree, tone: "lavender" },
+  { title: "Fixed, explainable pipeline", body: "Research → plan approval → Coding → Testing → Gap Detective, plus What-If branches. Same order every run, every step visible.", Icon: UsersThree, tone: "lavender" },
   { title: "Lab Memory", body: "Errors, fixes and settings are remembered, so the next run is faster and makes fewer mistakes.", Icon: Brain, tone: "sun" },
   { title: "Live Research Map", body: "The Observer draws what each agent found and did: paper, claims, sources, code and tests.", Icon: MapTrifold, tone: "pink" },
   { title: "Control from your phone", body: "Large approve / reject buttons on mobile, a shared live link with QR code, and run replay.", Icon: Microphone, tone: "cream" },
@@ -131,7 +131,7 @@ export default function LandingPage() {
             <div>
               <Kicker tone="lavender">Not a chat app</Kicker>
               <h2 className="mt-5 text-3xl font-semibold sm:text-[2.5rem] sm:leading-[1.1]">A research control room.</h2>
-              <p className="mt-4 text-white/75">Every agent is a card with what it is doing right now, <em>why</em> it is doing it, and what it has cost. Pause, stop, retry, instruct, or give a thumbs up — the Team Manager learns from it.</p>
+              <p className="mt-4 text-white/75">Every agent is a card with what it is doing right now, <em>why</em> it is doing it, and what it has cost. Pause, stop, retry or give an instruction — at any step.</p>
               <div className="mt-6 flex flex-wrap gap-2">
                 {["Research", "Plan approval", "Coding", "Testing", "What-ifs", "Push"].map((s, i) => (
                   <span key={s} className={i < 3 ? "rounded-full border-2 border-white bg-purple px-3 py-1 text-xs font-bold" : "rounded-full border-2 border-white/30 px-3 py-1 text-xs font-bold text-white/60"}>{s}</span>
@@ -139,7 +139,7 @@ export default function LandingPage() {
               </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              {[["Team Manager", "Created ‘Dataset Subset Planner’", "Full dataset needs 3h on this laptop", "bg-lavender"], ["Coding · Debugger", "Pinned numpy<2 — fixed from memory", "Same error seen in run #3", "bg-mint"], ["Research · Reader", "Reading page 3: MNIST results", "LaTeX source avoids OCR errors", "bg-sky"], ["Testing · Runner", "6 / 6 tests passed", "Claims checked with ±10% tolerance", "bg-sun"]].map(([a, t, w, c]) => (
+              {[["Gap Detective", "Testing: 5 epochs vs the paper's longer run", "One-change experiment, not a guess", "bg-lavender"], ["Coding · Debugger", "Pinned numpy<2 — fixed from memory", "Same error seen in run #3", "bg-mint"], ["Research · Reader", "Reading page 3: MNIST results", "LaTeX source avoids OCR errors", "bg-sky"], ["Testing · Runner", "6 / 6 tests passed", "Claims checked with ±10% tolerance", "bg-sun"]].map(([a, t, w, c]) => (
                 <div key={a} className="rounded-[24px] border-2 border-white/80 bg-white p-4 text-ink shadow-[5px_5px_0_#7b5cf0]">
                   <div className="flex items-center gap-2"><span className={`h-2.5 w-2.5 rounded-full border border-ink ${c}`} /><span className="text-xs font-bold uppercase tracking-wider text-muted">{a}</span></div>
                   <p className="mt-2 text-sm font-bold">{t}</p>

@@ -27,7 +27,6 @@ export const qk = {
   briefing: (id: string) => ["run", id, "briefing"] as const,
   pushStatus: (id: string) => ["run", id, "push"] as const,
   agents: ["agents"] as const,
-  agentHistory: (id: string) => ["agents", id, "history"] as const,
   memorySearch: (q: string) => ["memory", "search", q] as const,
   shared: (t: string) => ["share", t] as const,
   sharedEvents: (t: string) => ["share", t, "events"] as const,
@@ -93,11 +92,9 @@ export const usePushStatus = (
   useQuery({ queryKey: qk.pushStatus(id ?? ""), queryFn: ({ signal }) => runApi.pushStatus(id!, signal), enabled: !!id, refetchInterval });
 
 export const useAgents = () => useQuery({ queryKey: qk.agents, queryFn: ({ signal }) => teamApi.agents(signal) });
-export const useAgentHistory = (id: string | null) =>
-  useQuery({ queryKey: qk.agentHistory(id ?? ""), queryFn: ({ signal }) => teamApi.history(id!, signal), enabled: !!id });
 export const useMemorySearch = (q: string) =>
   useQuery({ queryKey: qk.memorySearch(q), queryFn: ({ signal }) => memoryApi.search(q, signal), enabled: q.trim().length > 1 });
 
 export const useSharedView = (t: string) => useQuery({ queryKey: qk.shared(t), queryFn: ({ signal }) => shareApi.view(t, signal) });
-export const useSharedScorecard = (t: string, enabled: boolean) =>
-  useQuery({ queryKey: qk.sharedScorecard(t), queryFn: ({ signal }) => shareApi.scorecard(t, signal), enabled });
+export const useSharedScorecard = (t: string, runId: string | null) =>
+  useQuery({ queryKey: [...qk.sharedScorecard(t), runId], queryFn: ({ signal }) => shareApi.scorecard(t, runId!, signal), enabled: !!runId });

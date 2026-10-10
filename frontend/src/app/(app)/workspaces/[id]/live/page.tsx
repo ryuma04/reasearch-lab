@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { ArrowRight, Coins, Timer, CheckCircle } from "@phosphor-icons/react";
 import { useRunStream } from "@/lib/hooks/use-run-stream";
 import { useSelectedRun } from "@/components/run/workspace-header";
+import { CommandPanel } from "@/components/run/command-panel";
 import { AgentCard, CheckpointPanel, ConnectionPill, EventFeed, StageBar } from "@/components/run/board";
 import { formatDuration, formatNumber } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -56,17 +57,20 @@ export default function LiveBoardPage() {
           {s.historyLoading && !board.agents.length ? (
             <SkeletonList rows={3} />
           ) : board.agents.length === 0 ? (
-            <EmptyState title="Waiting for the Team Manager" body="Agent cards appear as soon as the backend reports activity." />
+            <EmptyState title="Waiting for the agents" body="Agent cards appear as soon as the backend reports activity." />
           ) : (
             <div className="grid gap-4 md:grid-cols-2">
               {board.agents.map((a) => <AgentCard key={a.key} card={a} runId={runId} workspaceId={id} readOnly={readOnly} />)}
             </div>
           )}
         </section>
-        <Card variant="bento" className="max-h-[70vh] overflow-y-auto">
-          <div className="sticky top-0 z-10 border-b border-line-cool bg-white px-4 py-3"><p className="font-display text-sm font-bold">Event stream</p></div>
-          <EventFeed events={s.events} />
-        </Card>
+        <div className="space-y-4">
+          {!readOnly && <CommandPanel runId={runId} />}
+          <Card variant="bento" className="max-h-[70vh] overflow-y-auto">
+            <div className="sticky top-0 z-10 border-b border-line-cool bg-white px-4 py-3"><p className="font-display text-sm font-bold">Event stream</p></div>
+            <EventFeed events={s.events} />
+          </Card>
+        </div>
       </div>
     </div>
   );

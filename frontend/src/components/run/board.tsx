@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useMutation } from "@tanstack/react-query";
-import { ArrowClockwise, ChatText, CheckCircle, Pause, Play, Stop, ThumbsDown, ThumbsUp, WifiHigh, WifiSlash, Brain, ArrowSquareOut, Lightning, X, PencilSimple } from "@phosphor-icons/react";
+import { ArrowClockwise, ChatText, CheckCircle, Pause, Play, Stop, WifiHigh, WifiSlash, Brain, ArrowSquareOut, Lightning, X, PencilSimple } from "@phosphor-icons/react";
 import type { RunEvent } from "@/lib/api/types";
 import type { AgentCardState, BoardState, PendingCheckpoint } from "@/lib/run-state";
 import { STAGES } from "@/lib/run-state";
@@ -91,8 +91,6 @@ export function AgentCard({ card, runId, workspaceId, readOnly }: { card: AgentC
               <IconAction label="Stop" onClick={() => act.mutate({ action: "stop" })} disabled={pending || ["done", "stopped"].includes(card.status)}><Stop size={16} weight="bold" /></IconAction>
               <IconAction label="Retry" onClick={() => act.mutate({ action: "retry" })} disabled={pending || !["failed", "blocked", "stopped"].includes(card.status)}><ArrowClockwise size={16} weight="bold" /></IconAction>
               <IconAction label="Give instruction" onClick={() => setInstructOpen(true)} disabled={pending}><ChatText size={16} weight="bold" /></IconAction>
-              <IconAction label="Thumbs up" onClick={() => act.mutate({ action: "thumbs_up" })} disabled={pending}><ThumbsUp size={16} weight="bold" /></IconAction>
-              <IconAction label="Thumbs down" onClick={() => act.mutate({ action: "thumbs_down" })} disabled={pending}><ThumbsDown size={16} weight="bold" /></IconAction>
             </>
           )}
           <Link href={`/workspaces/${workspaceId}/agents/${encodeURIComponent(card.key)}?run=${encodeURIComponent(runId)}`} target="_blank" className="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-purple-deep underline underline-offset-2">

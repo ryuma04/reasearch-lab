@@ -15,8 +15,9 @@ import { EmptyState, ErrorState, QueryView, SkeletonList } from "@/components/ui
 export default function SharedPage() {
   const { token } = useParams<{ token: string }>();
   const view = useSharedView(token);
-  const s = useRunStream(view.data?.run ? { share: token } : null);
-  const sc = useSharedScorecard(token, !!view.data?.run);
+  const sharedRunId = view.data?.run?.id ?? null;
+  const s = useRunStream(sharedRunId ? { share: token, runId: sharedRunId } : null);
+  const sc = useSharedScorecard(token, sharedRunId);
 
   return (
     <div className="min-h-dvh bg-dots-cool">

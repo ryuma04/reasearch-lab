@@ -60,7 +60,7 @@ function CallbackInner() {
         ) : (
           <>
             <div className="mx-auto mt-8 h-2.5 w-40 overflow-hidden rounded-full bg-ink/10"><div className="skeleton h-full w-full" /></div>
-            <p className="mt-4 text-sm font-semibold" role="status">Confirming your GitHub sign-in…</p>
+            <p className="mt-4 text-sm font-semibold" role="status">Confirming your sign-in…</p>
           </>
         )}
       </div>

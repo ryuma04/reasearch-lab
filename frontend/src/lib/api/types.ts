@@ -246,8 +246,8 @@ export interface CheckpointResult {
   run?: Run;
 }
 
-/** §9.4: Pause, Stop, Retry, Give instruction, Thumbs up, Thumbs down. */
-export type AgentActionKind = "pause" | "resume" | "stop" | "retry" | "instruct" | "thumbs_up" | "thumbs_down";
+/** §9.1: Pause, Stop, Retry, Give instruction (plus Resume). */
+export type AgentActionKind = "pause" | "resume" | "stop" | "retry" | "instruct";
 
 /** POST /runs/{id}/agents/{agent}/action */
 export interface AgentActionRequest {
@@ -574,6 +574,8 @@ export interface ResearchBrief {
   sources: SourceRef[];
   recommendation: string;
   skills?: string[];
+  /** Markdown brief written by the Research Agent (GET /runs/{id}/research). */
+  brief_markdown?: string | null;
   /** Plan text shown at Checkpoint 1. */
   plan?: string[];
 }

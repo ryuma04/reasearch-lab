@@ -28,7 +28,10 @@ const INVALIDATE: Record<string, (runId: string) => readonly unknown[][]> = {
   run_failed: (r) => [[...qk.run(r)]],
   stage_changed: (r) => [[...qk.run(r)]],
   checkpoint_resolved: (r) => [[...qk.run(r)]],
-  team_decision: () => [[...qk.agents]],
+  checkpoint_waiting: (r) => [[...qk.run(r)]],
+  task_done: (r) => [[...qk.map(r)]],
+  task_started: (r) => [[...qk.map(r)]],
+  task_failed: (r) => [[...qk.map(r)]],
 };
 
 export interface RunStreamResult {
@@ -46,7 +49,7 @@ export interface RunStreamResult {
  * Events are de-duplicated by id, so reconnects / overlap never double-count.
  * Pass `{ share: token }` for the read-only shared view.
  */
-export function useRunStream(target: { runId: string } | { share: string } | null, live = true): RunStreamResult {
+export function useRunStream(target: { runId: string; share?: undefined } | { share: string; runId: string } | null, live = true): RunStreamResult {
   const qc = useQueryClient();
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [state, setState] = useState<StreamState>("connecting");
@@ -56,7 +59,7 @@ export function useRunStream(target: { runId: string } | { share: string } | nul
   const [now, setNow] = useState(() => Date.now());
   const eventsRef = useRef<RunEvent[]>([]);
 
-  const key = target ? ("runId" in target ? `run:${target.runId}` : `share:${target.share}`) : null;
+  const key = target ? (target.share ? `share:${target.share}:${target.runId}` : `run:${target.runId}`) : null;
 
   useEffect(() => {
     if (!target) return;
@@ -75,8 +78,9 @@ export function useRunStream(target: { runId: string } | { share: string } | nul
       setEvents(merged);
     };
 
-    const runId = "runId" in target ? target.runId : null;
-    const history = runId ? runApi.events(runId, ac.signal) : shareApi.events((target as { share: string }).share, ac.signal);
+    const share = target.share ?? null;
+    const runId = share ? null : target.runId;
+    const history = share ? shareApi.events(share, target.runId, ac.signal) : runApi.events(target.runId, ac.signal);
 
     history
       .then((list) => apply(list))
@@ -89,7 +93,7 @@ export function useRunStream(target: { runId: string } | { share: string } | nul
 
     if (live) {
       const def = runId ? ENDPOINTS.runStream : ENDPOINTS.sharedStream;
-      const params: Record<string, string> = runId ? { id: runId } : { token: (target as { share: string }).share };
+      const params: Record<string, string> = share ? { token: share, runId: target.runId } : { id: target.runId };
       dispose = openEventStream(
         def,
         params,

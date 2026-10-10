@@ -1,3 +1,4 @@
+import { toEvent } from "./adapters";
 import { USE_MOCKS } from "@/lib/config";
 import { apiUrl } from "./client";
 import type { EndpointDef } from "./endpoints";
@@ -56,7 +57,8 @@ export function openEventStream(
   const handleMessage = (ev: MessageEvent) => {
     if (disposed || typeof ev.data !== "string" || !ev.data) return;
     try {
-      const parsed = JSON.parse(ev.data) as RunEvent;
+      // Same adapter as GET /events, so live and saved events share ids and de-duplicate.
+      const parsed: RunEvent = toEvent(JSON.parse(ev.data));
       if (!parsed.id && ev.lastEventId) parsed.id = ev.lastEventId;
       retries = 0;
       handlers.onEvent(parsed);

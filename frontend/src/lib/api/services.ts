@@ -1,9 +1,11 @@
 /**
  * Typed service functions — the ONLY way UI code talks to the backend.
- * One function per endpoint in ./endpoints.ts.
+ * One function per endpoint in ./endpoints.ts. Request bodies are built in the Go backend's
+ * format and every response goes through ./adapters.ts into the UI's domain types.
  */
 import { API_BASE_URL } from "@/lib/config";
 import { safeReturnPath } from "@/lib/utils";
+import * as A from "./adapters";
 import { apiUrl, request, unwrapList, uploadWithProgress, type UploadProgress } from "./client";
 import { ENDPOINTS } from "./endpoints";
 import type * as T from "./types";
@@ -17,9 +19,14 @@ export function githubLoginUrl(returnTo?: string | null): string {
 }
 
 export const authApi = {
-  me: (signal?: AbortSignal) => request<T.MeResponse>(ENDPOINTS.me, { signal }),
+  me: async (signal?: AbortSignal): Promise<T.MeResponse> => A.toMe(await request(ENDPOINTS.me, { signal })),
   logout: () => request<void>(ENDPOINTS.authLogout),
-  myPushes: async (signal?: AbortSignal) => unwrapList<T.Push>(await request(ENDPOINTS.myPushes, { signal }), "pushes"),
+  /** Email + password account (alongside GitHub). Sets the session cookie. */
+  register: (email: string, password: string, name?: string) =>
+    request<unknown>(ENDPOINTS.register, { body: { email, password, name } }),
+  passwordLogin: (email: string, password: string) => request<unknown>(ENDPOINTS.passwordLogin, { body: { email, password } }),
+  /** Pushes are part of GET /me. */
+  myPushes: async (signal?: AbortSignal): Promise<T.Push[]> => A.toMe(await request(ENDPOINTS.me, { signal })).pushes,
 };
 
 /* ── GitHub ── */
@@ -27,90 +34,137 @@ export const authApi = {
 export const githubApi = {
   listRepos: async (signal?: AbortSignal) => unwrapList<T.GithubRepo>(await request(ENDPOINTS.listRepos, { signal }), "repos"),
   createRepo: (body: T.CreateRepoRequest) => request<T.GithubRepo>(ENDPOINTS.createRepo, { body }),
-  setDefaultRepo: (body: T.SetDefaultRepoRequest) => request<T.GithubConnection | undefined>(ENDPOINTS.setDefaultRepo, { body }),
-  disconnect: () => request<void>(ENDPOINTS.disconnectGithub),
+  setDefaultRepo: (body: T.SetDefaultRepoRequest) => request<unknown>(ENDPOINTS.setDefaultRepo, { body }),
+  disconnect: () => request<unknown>(ENDPOINTS.disconnectGithub),
 };
 
 /* ── Workspaces ── */
 
 export const workspaceApi = {
-  list: async (signal?: AbortSignal) =>
-    unwrapList<T.WorkspaceSummary>(await request(ENDPOINTS.listWorkspaces, { signal }), "workspaces"),
-  create: (body: T.CreateWorkspaceRequest) => request<T.Workspace>(ENDPOINTS.createWorkspace, { body }),
-  get: (id: string, signal?: AbortSignal) => request<T.WorkspaceDetail>(ENDPOINTS.getWorkspace, { params: { id }, signal }),
-  upload: (id: string, req: T.UploadRequest, onProgress?: (p: UploadProgress) => void, signal?: AbortSignal) => {
-    const form = new FormData();
-    form.set("kind", req.kind);
-    if (req.file) form.set("file", req.file, req.file.name);
-    if (req.url) form.set("url", req.url);
-    return uploadWithProgress<T.Upload>(ENDPOINTS.uploadToWorkspace, { id }, form, onProgress, signal);
+  list: async (signal?: AbortSignal): Promise<T.WorkspaceSummary[]> =>
+    unwrapList<unknown>(await request(ENDPOINTS.listWorkspaces, { signal }), "workspaces").map(A.toWorkspace),
+  create: async (body: T.CreateWorkspaceRequest): Promise<T.Workspace> =>
+    A.toWorkspace(await request(ENDPOINTS.createWorkspace, { body })),
+  get: async (id: string, signal?: AbortSignal): Promise<T.WorkspaceDetail> =>
+    A.toWorkspaceDetail(await request(ENDPOINTS.getWorkspace, { params: { id }, signal })),
+  /** Files go as multipart (with progress); links (arXiv, dataset URL, repository) as JSON. */
+  upload: async (id: string, req: T.UploadRequest, onProgress?: (p: UploadProgress) => void, signal?: AbortSignal): Promise<T.Upload> => {
+    if (req.file) {
+      const form = new FormData();
+      form.set("kind", req.kind);
+      form.set("file", req.file, req.file.name);
+      return A.toUpload(await uploadWithProgress<unknown>(ENDPOINTS.uploadToWorkspace, { id }, form, onProgress, signal));
+    }
+    return A.toUpload(await request(ENDPOINTS.uploadToWorkspace, { params: { id }, body: { kind: req.kind, url: req.url }, signal }));
   },
   notes: async (id: string, signal?: AbortSignal) =>
     unwrapList<T.Note>(await request(ENDPOINTS.getNotes, { params: { id }, signal }), "notes"),
   saveNotes: (id: string, body: T.UpdateNotesRequest) =>
     request<T.Note | T.Note[] | undefined>(ENDPOINTS.putNotes, { params: { id }, body }),
-  share: (id: string, body: T.ShareRequest = {}) => request<T.ShareLink>(ENDPOINTS.shareWorkspace, { params: { id }, body }),
+  share: async (id: string, body: T.ShareRequest = {}) =>
+    A.toShareLink(await request(ENDPOINTS.shareWorkspace, { params: { id }, body: { hours: body.expires_in_hours } })),
   paperFileUrl: (paperId: string) => apiUrl(ENDPOINTS.paperFile, { id: paperId }),
 };
 
 /* ── Runs ── */
 
 export const runApi = {
-  start: (workspaceId: string, body: T.StartRunRequest) =>
-    request<T.Run>(ENDPOINTS.startRun, { params: { id: workspaceId }, body }),
-  get: (id: string, signal?: AbortSignal) => request<T.Run>(ENDPOINTS.getRun, { params: { id }, signal }),
+  start: async (workspaceId: string, body: T.StartRunRequest): Promise<T.Run> =>
+    A.toRun(await request(ENDPOINTS.startRun, { params: { id: workspaceId }, body })),
+  get: async (id: string, signal?: AbortSignal): Promise<T.Run> => A.toRun(await request(ENDPOINTS.getRun, { params: { id }, signal })),
   events: async (id: string, signal?: AbortSignal) =>
-    unwrapList<T.RunEvent>(await request(ENDPOINTS.runEvents, { params: { id }, signal }), "events"),
+    unwrapList<unknown>(await request(ENDPOINTS.runEvents, { params: { id }, signal }), "events").map(A.toEvent),
   checkpoint: (id: string, name: string, body: T.CheckpointRequest) =>
-    request<T.CheckpointResult | undefined>(ENDPOINTS.checkpoint, { params: { id, name }, body }),
+    request<unknown>(ENDPOINTS.checkpoint, {
+      params: { id, name },
+      body: { action: body.decision, instruction: body.instructions },
+    }) as Promise<T.CheckpointResult | undefined>,
+  /** `agent` is a board card ("coding") or a full agent id ("coding.writer"); "run" controls the whole run. */
   agentAction: (id: string, agent: string, body: T.AgentActionRequest) =>
-    request<T.AgentActionResult | undefined>(ENDPOINTS.agentAction, { params: { id, agent }, body }),
+    request<unknown>(ENDPOINTS.agentAction, {
+      params: { id, agent },
+      body: { action: body.action, text: body.instruction },
+    }) as Promise<T.AgentActionResult | undefined>,
   scorecard: async (id: string, signal?: AbortSignal) =>
-    unwrapList<T.ScorecardEntry>(await request(ENDPOINTS.scorecard, { params: { id }, signal }), "entries", "scorecard"),
+    unwrapList<unknown>(await request(ENDPOINTS.scorecard, { params: { id }, signal }), "entries").map((r) => A.toScorecardEntry(r, id)),
   settings: async (id: string, signal?: AbortSignal) =>
-    unwrapList<T.RunSetting>(await request(ENDPOINTS.settings, { params: { id }, signal }), "settings"),
-  createWhatIf: async (id: string, body: T.WhatIfRequest) => {
-    const data = await request<unknown>(ENDPOINTS.createWhatIf, { params: { id }, body });
-    const list = unwrapList<T.WhatIfBranch>(data, "branches");
-    if (list.length) return list;
-    return data && typeof data === "object" && "id" in data ? [data as T.WhatIfBranch] : [];
+    unwrapList<unknown>(await request(ENDPOINTS.settings, { params: { id }, signal }), "settings").map((r) => A.toSetting(r, id)),
+  /** Queues the question; branches appear in GET /runs/{id}/whatif as the planner creates them. */
+  createWhatIf: async (id: string, body: T.WhatIfRequest): Promise<T.WhatIfBranch[]> => {
+    await request<unknown>(ENDPOINTS.createWhatIf, { params: { id }, body });
+    return runApi.whatIfs(id);
   },
   whatIfs: async (id: string, signal?: AbortSignal) =>
-    unwrapList<T.WhatIfBranch>(await request(ENDPOINTS.listWhatIfs, { params: { id }, signal }), "branches"),
-  brief: (id: string, signal?: AbortSignal) => request<T.ResearchBrief>(ENDPOINTS.brief, { params: { id }, signal }),
+    unwrapList<unknown>(await request(ENDPOINTS.listWhatIfs, { params: { id }, signal }), "branches").map((b) => A.toWhatIf(b, id)),
+  brief: async (id: string, signal?: AbortSignal) => A.toBrief(await request(ENDPOINTS.brief, { params: { id }, signal }), id),
   files: async (id: string, signal?: AbortSignal) =>
-    unwrapList<T.RunFile>(await request(ENDPOINTS.files, { params: { id }, signal }), "files"),
+    unwrapList<unknown>(await request(ENDPOINTS.files, { params: { id }, signal }), "files").map(A.toFile),
   fileContent: (id: string, path: string, signal?: AbortSignal) =>
     request<string>(ENDPOINTS.fileContent, { params: { id }, query: { path }, signal, responseType: "text" }),
-  fileDownloadUrl: (id: string, path: string) => apiUrl(ENDPOINTS.fileContent, { id }, { path, download: 1 }),
-  tests: (id: string, signal?: AbortSignal) => request<T.TestReport>(ENDPOINTS.tests, { params: { id }, signal }),
-  gaps: (id: string, signal?: AbortSignal) => request<T.GapAnalysis>(ENDPOINTS.gaps, { params: { id }, signal }),
-  map: (id: string, signal?: AbortSignal) => request<T.ResearchMap>(ENDPOINTS.map, { params: { id }, signal }),
-  memory: (id: string, signal?: AbortSignal) => request<T.RunMemory>(ENDPOINTS.runMemory, { params: { id }, signal }),
+  fileDownloadUrl: (id: string, path: string) => apiUrl(ENDPOINTS.fileContent, { id }, { path }),
+  tests: async (id: string, signal?: AbortSignal) => A.toTests(await request(ENDPOINTS.tests, { params: { id }, signal }), id),
+  gaps: async (id: string, signal?: AbortSignal) => A.toGap(await request(ENDPOINTS.gaps, { params: { id }, signal }), id),
+  map: async (id: string, signal?: AbortSignal) => A.toMap(await request(ENDPOINTS.map, { params: { id }, signal }), id),
+  memory: async (id: string, signal?: AbortSignal) => A.toRunMemory(await request(ENDPOINTS.runMemory, { params: { id }, signal })),
   reportUrl: (id: string, format: "md" | "pdf") => apiUrl(ENDPOINTS.report, { id }, { format }),
   briefing: (id: string, signal?: AbortSignal) => request<T.AudioBriefing>(ENDPOINTS.briefing, { params: { id }, signal }),
-  push: (id: string, body: T.PushRequest) => request<T.Push>(ENDPOINTS.push, { params: { id }, body }),
-  pushStatus: (id: string, signal?: AbortSignal) => request<T.Push>(ENDPOINTS.pushStatus, { params: { id }, signal }),
+  metricProof: async (metricId: string, signal?: AbortSignal) =>
+    A.toMetric(await request(ENDPOINTS.metricProof, { params: { id: metricId }, signal })),
+  /** Approval is explicit: the UI only calls this after the researcher ticks and confirms. */
+  push: async (id: string, body: T.PushRequest): Promise<T.Push> => {
+    const res = await request<unknown>(ENDPOINTS.push, { params: { id }, body: { repo: body.repo_full_name } });
+    return A.toPush({ ...(res as object), run_id: id });
+  },
+  /** Latest push of the run (backend lists newest first); 404-JSON-like "not found" when none. */
+  pushStatus: async (id: string, signal?: AbortSignal): Promise<T.Push> => {
+    const list = unwrapList<unknown>(await request(ENDPOINTS.pushStatus, { params: { id }, signal }), "pushes");
+    if (!list.length) throw Object.assign(new Error("No push yet for this run"), { kind: "not_found", status: 404 });
+    return A.toPush(list[0]);
+  },
 };
 
-/* ── Team & memory ── */
+/* ── Agents & memory ── */
 
 export const teamApi = {
-  agents: async (signal?: AbortSignal) => unwrapList<T.Agent>(await request(ENDPOINTS.agents, { signal }), "agents"),
-  history: (id: string, signal?: AbortSignal) => request<T.AgentHistory>(ENDPOINTS.agentHistory, { params: { id }, signal }),
+  agents: async (signal?: AbortSignal) => A.toAgents(await request(ENDPOINTS.agents, { signal })),
 };
 
 export const memoryApi = {
   search: async (q: string, signal?: AbortSignal) =>
-    unwrapList<T.MemoryItem>(await request(ENDPOINTS.memorySearch, { query: { q }, signal }), "items", "results"),
+    unwrapList<unknown>(await request(ENDPOINTS.memorySearch, { query: { q }, signal }), "items", "results").map(A.toMemoryItem),
+};
+
+/* ── Voice / typed commands (mobile control) ── */
+
+export interface VoiceIntent {
+  action: string;
+  run_id?: number;
+  reply?: string;
+  question?: string;
+  checkpoint?: string;
+  decision?: string;
+  agent?: string;
+  text?: string;
+  [k: string]: unknown;
+}
+
+export const voiceApi = {
+  text: (text: string) => request<{ text: string; intent: VoiceIntent }>(ENDPOINTS.voiceText, { body: { text } }),
+  command: (audio: Blob) => {
+    const form = new FormData();
+    form.set("audio", audio, "command.webm");
+    return uploadWithProgress<{ text: string; intent: VoiceIntent }>(ENDPOINTS.voiceCommand, {}, form);
+  },
 };
 
 /* ── Shared read-only view ── */
 
 export const shareApi = {
-  view: (token: string, signal?: AbortSignal) => request<T.SharedView>(ENDPOINTS.sharedView, { params: { token }, signal }),
-  events: async (token: string, signal?: AbortSignal) =>
-    unwrapList<T.RunEvent>(await request(ENDPOINTS.sharedEvents, { params: { token }, signal }), "events"),
-  scorecard: async (token: string, signal?: AbortSignal) =>
-    unwrapList<T.ScorecardEntry>(await request(ENDPOINTS.sharedScorecard, { params: { token }, signal }), "entries"),
+  view: async (token: string, signal?: AbortSignal) => A.toSharedView(await request(ENDPOINTS.sharedView, { params: { token }, signal })),
+  events: async (token: string, runId: string, signal?: AbortSignal) =>
+    unwrapList<unknown>(await request(ENDPOINTS.sharedEvents, { params: { token, runId }, signal }), "events").map(A.toEvent),
+  scorecard: async (token: string, runId: string, signal?: AbortSignal) =>
+    unwrapList<unknown>(await request(ENDPOINTS.sharedScorecard, { params: { token, runId }, signal }), "entries").map((r) =>
+      A.toScorecardEntry(r, runId),
+    ),
 };

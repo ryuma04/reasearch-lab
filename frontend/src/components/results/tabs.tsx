@@ -11,7 +11,7 @@ import { userMessage } from "@/lib/api/errors";
 import { qk, useAgents, useBrief, useFileContent, useGaps, useNotes, useRunFiles, useRunMemory, useScorecard, useSettings, useTests, useWhatIfs } from "@/lib/hooks/queries";
 import { repairHistory } from "@/lib/run-state";
 import type { RunEvent } from "@/lib/api/types";
-import { agentStageMeta, claimStatusMeta, settingSourceMeta, whatIfStatusMeta } from "@/lib/status";
+import { claimStatusMeta, settingSourceMeta, whatIfStatusMeta } from "@/lib/status";
 import { LIMITS } from "@/lib/config";
 import { cn, formatBytes, formatDateTime, formatNumber, shortId } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -56,15 +56,17 @@ export function ResearchTab({ runId }: { runId: string }) {
       {(b) => (
         <div className="grid gap-5 lg:grid-cols-[1.3fr_1fr]">
           <div className="space-y-5">
-            <Card className="p-6"><SectionTitle title="Summary" /><p className="mt-3 text-ink-soft">{b.summary}</p>
-              <p className="mt-4 text-xs font-bold uppercase tracking-wider text-muted">Method</p><ol className="mt-1 list-decimal space-y-1 pl-5 text-sm">{b.method.map((m) => <li key={m}>{m}</li>)}</ol></Card>
+            {b.brief_markdown
+              ? <Card className="p-6"><SectionTitle title="Research Brief" kicker="written by the Research Agent" /><Markdown className="mt-3 text-sm">{b.brief_markdown}</Markdown></Card>
+              : <Card className="p-6"><SectionTitle title="Summary" /><p className="mt-3 text-ink-soft">{b.summary || "The Research Agent has not written the brief yet."}</p>
+                {b.method.length > 0 && <><p className="mt-4 text-xs font-bold uppercase tracking-wider text-muted">Method</p><ol className="mt-1 list-decimal space-y-1 pl-5 text-sm">{b.method.map((m) => <li key={m}>{m}</li>)}</ol></>}</Card>}
             <Card className="p-6"><SectionTitle title="Claims list" kicker={`${b.claims.length} claims`} />
               <ul className="mt-3 space-y-2">{b.claims.map((c) => (
                 <li key={c.id} className="flex flex-wrap items-center gap-2 rounded-2xl bg-canvas p-3 text-sm"><span className="flex-1 font-semibold">{c.description}</span><span className="tabular font-display font-bold">{c.value} {c.unit}</span><Badge tone="mint">p.{c.page ?? "?"}{c.table_ref ? ` · ${c.table_ref}` : ""}</Badge></li>
               ))}</ul></Card>
           </div>
           <div className="space-y-5">
-            <Card variant="soft" tone="lavender" className="p-6"><p className="font-display font-bold">Recommendation</p><p className="mt-2 text-sm">{b.recommendation}</p></Card>
+            {b.recommendation && <Card variant="soft" tone="lavender" className="p-6"><p className="font-display font-bold">Recommendation</p><p className="mt-2 text-sm">{b.recommendation}</p></Card>}
             <Card className="p-6"><SectionTitle title="Sources" />
               <ul className="mt-3 space-y-2">{b.sources.map((s) => (
                 <li key={s.id} className="rounded-2xl border border-line p-3 text-sm">
@@ -284,7 +286,7 @@ export function WhatIfTab({ runId, readOnly }: { runId: string; readOnly?: boole
                 <Card key={b.id} className={cn("relative p-4", b.status === "stopped_early" && "opacity-60", best?.id === b.id && "ring-2 ring-success")}>
                   <span className="absolute -left-[30px] top-6 h-4 w-4 rounded-full border-2 border-ink bg-white" aria-hidden />
                   <div className="flex flex-wrap items-center gap-2"><p className="flex-1 font-semibold">{b.question}</p><Badge tone={st.tone} solid>{st.label}</Badge>{best?.id === b.id && <Badge tone="mint" solid>Best so far</Badge>}</div>
-                  <p className="mt-1 text-xs text-muted">{Object.entries(b.settings_change).map(([k, v]) => `${k} = ${String(v)}`).join(", ") || "Settings pending"}{b.branch_name ? ` · branch ${b.branch_name}` : ""}{b.round != null ? ` · round ${b.round}` : ""}{b.budget_seconds ? ` · budget ${b.budget_seconds}s` : ""}{b.suggested_by === "manager" ? " · suggested by Team Manager" : ""}</p>
+                  <p className="mt-1 text-xs text-muted">{Object.entries(b.settings_change).map(([k, v]) => `${k} = ${String(v)}`).join(", ") || "Settings pending"}{b.branch_name ? ` · branch ${b.branch_name}` : ""}{b.round != null ? ` · round ${b.round}` : ""}{b.budget_seconds ? ` · budget ${b.budget_seconds}s` : ""}</p>
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">{b.result_metric ? <>Result: <ProofNumber metric={b.result_metric} /> <span className="text-xs text-muted">{b.result_metric.name}</span></> : <span className="text-muted">{b.status === "proposed" ? "Not run — a suggestion, not a discovery." : "No measured result yet."}</span>}</div>
                   {b.stop_reason && <p className="mt-1 text-xs text-muted">Stopped: {b.stop_reason}</p>}
                 </Card>
@@ -297,27 +299,22 @@ export function WhatIfTab({ runId, readOnly }: { runId: string; readOnly?: boole
   );
 }
 
-/* ── Team ── */
-export function TeamTab({ events }: { events: RunEvent[] }) {
+/* ── Agents (the fixed pipeline) ── */
+export function AgentsTab({ events }: { events: RunEvent[] }) {
   const agents = useAgents();
-  const decisions = events.filter((e) => e.type === "team_decision");
+  const countFor = (id: string) => events.filter((e) => e.agent === id).length;
   return (
-    <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
-      <QueryView query={agents} feature="Agent team" isEmpty={(a) => !a.length}>
-        {(list) => (
-          <div className="grid gap-3 sm:grid-cols-2">{list.map((a) => (
-            <Link key={a.id} href={`/team?agent=${encodeURIComponent(a.id)}`}><Card interactive className="h-full p-4">
-              <div className="flex items-center justify-between gap-2"><p className="font-bold">{a.name}</p><Badge tone={agentStageMeta[a.stage].tone} solid>{agentStageMeta[a.stage].label}</Badge></div>
-              <p className="mt-1 text-xs text-muted">{a.kind}{a.current_version?.model ? ` · ${a.current_version.model}` : ""}</p>
-              <div className="mt-2 flex flex-wrap gap-1">{a.current_version?.skill_tags.map((s) => <Badge key={s} tone="sky">{s}</Badge>)}</div>
-              <p className="tabular mt-3 font-display text-xl font-bold">{a.avg_score != null ? a.avg_score.toFixed(2) : "—"} <span className="text-xs font-normal text-muted">avg score</span></p>
-            </Card></Link>
-          ))}</div>
-        )}
-      </QueryView>
-      <Card variant="bento"><div className="border-b border-line-cool px-5 py-3"><p className="font-display font-bold">Team decisions in this run</p></div>
-        <EventFeed events={decisions} /></Card>
-    </div>
+    <QueryView query={agents} feature="Pipeline agents" isEmpty={(a) => !a.length}>
+      {(list) => (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{list.map((a) => (
+          <Card key={a.id} className="h-full p-4">
+            <div className="flex items-center justify-between gap-2"><p className="font-bold">{a.name}</p><Badge tone="sky">{a.group}</Badge></div>
+            <p className="mt-2 text-sm text-muted">{a.description}</p>
+            <p className="tabular mt-3 text-xs text-muted">{countFor(a.id)} events in this run</p>
+          </Card>
+        ))}</div>
+      )}
+    </QueryView>
   );
 }
 

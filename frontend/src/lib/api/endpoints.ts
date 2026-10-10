@@ -33,9 +33,10 @@ const seg = (v: string) => encodeURIComponent(v);
 export const ENDPOINTS = {
   // Auth & profile
   authLogin: e("authLogin", "GET", "/auth/github/login", "documented"),
-  authLogout: e("authLogout", "POST", "/auth/logout", "proposed"),
+  authLogout: e("authLogout", "POST", "/auth/logout", "documented"),
+  register: e("register", "POST", "/auth/register", "documented"),
+  passwordLogin: e("passwordLogin", "POST", "/auth/login", "documented"),
   me: e("me", "GET", "/me", "documented"),
-  myPushes: e("myPushes", "GET", "/me/pushes", "proposed"),
 
   // GitHub
   listRepos: e("listRepos", "GET", "/github/repos", "documented"),
@@ -44,18 +45,19 @@ export const ENDPOINTS = {
   disconnectGithub: e("disconnectGithub", "DELETE", "/github/connection", "documented"),
 
   // Workspaces
-  listWorkspaces: e("listWorkspaces", "GET", "/workspaces", "proposed"),
+  listWorkspaces: e("listWorkspaces", "GET", "/workspaces", "documented"),
   createWorkspace: e("createWorkspace", "POST", "/workspaces", "documented"),
   getWorkspace: e("getWorkspace", "GET", "/workspaces/{id}", "documented"),
   uploadToWorkspace: e("uploadToWorkspace", "POST", "/workspaces/{id}/uploads", "documented"),
   getNotes: e("getNotes", "GET", "/workspaces/{id}/notes", "documented"),
   putNotes: e("putNotes", "PUT", "/workspaces/{id}/notes", "documented"),
   shareWorkspace: e("shareWorkspace", "POST", "/workspaces/{id}/share", "documented"),
-  paperFile: e("paperFile", "GET", "/papers/{id}/file", "proposed"),
+  paperFile: e("paperFile", "GET", "/papers/{id}/pdf", "documented"),
 
   // Runs
   startRun: e("startRun", "POST", "/workspaces/{id}/runs", "documented"),
-  getRun: e("getRun", "GET", "/runs/{id}", "proposed"),
+  getRun: e("getRun", "GET", "/runs/{id}", "documented"),
+  workspaceRuns: e("workspaceRuns", "GET", "/workspaces/{id}/runs", "documented"),
   runStream: e("runStream", "GET", "/runs/{id}/stream", "documented"),
   runEvents: e("runEvents", "GET", "/runs/{id}/events", "documented"),
   checkpoint: e("checkpoint", "POST", "/runs/{id}/checkpoints/{name}", "documented"),
@@ -63,29 +65,31 @@ export const ENDPOINTS = {
   scorecard: e("scorecard", "GET", "/runs/{id}/scorecard", "documented"),
   settings: e("settings", "GET", "/runs/{id}/settings", "documented"),
   createWhatIf: e("createWhatIf", "POST", "/runs/{id}/whatif", "documented"),
-  listWhatIfs: e("listWhatIfs", "GET", "/runs/{id}/whatif", "proposed"),
-  brief: e("brief", "GET", "/runs/{id}/brief", "proposed"),
-  files: e("files", "GET", "/runs/{id}/files", "proposed"),
-  fileContent: e("fileContent", "GET", "/runs/{id}/files/content", "proposed"),
-  tests: e("tests", "GET", "/runs/{id}/tests", "proposed"),
-  gaps: e("gaps", "GET", "/runs/{id}/gaps", "proposed"),
-  map: e("map", "GET", "/runs/{id}/map", "proposed"),
-  runMemory: e("runMemory", "GET", "/runs/{id}/memory", "proposed"),
+  listWhatIfs: e("listWhatIfs", "GET", "/runs/{id}/whatif", "documented"),
+  brief: e("brief", "GET", "/runs/{id}/research", "documented"),
+  files: e("files", "GET", "/runs/{id}/files", "documented"),
+  fileContent: e("fileContent", "GET", "/runs/{id}/file", "documented"),
+  tests: e("tests", "GET", "/runs/{id}/tests", "documented"),
+  gaps: e("gaps", "GET", "/runs/{id}/gap", "documented"),
+  map: e("map", "GET", "/runs/{id}/map", "documented"),
+  runMemory: e("runMemory", "GET", "/runs/{id}/memory", "documented"),
   report: e("report", "GET", "/runs/{id}/report", "proposed"),
   briefing: e("briefing", "GET", "/runs/{id}/briefing", "proposed"),
   push: e("push", "POST", "/runs/{id}/push", "documented"),
-  pushStatus: e("pushStatus", "GET", "/runs/{id}/push", "proposed"),
+  pushStatus: e("pushStatus", "GET", "/runs/{id}/pushes", "documented"),
+  metricProof: e("metricProof", "GET", "/metrics/{id}/proof", "documented"),
+  voiceText: e("voiceText", "POST", "/voice/text", "documented"),
+  voiceCommand: e("voiceCommand", "POST", "/voice/command", "documented"),
 
   // Team & memory
   agents: e("agents", "GET", "/agents", "documented"),
-  agentHistory: e("agentHistory", "GET", "/agents/{id}/history", "documented"),
   memorySearch: e("memorySearch", "GET", "/memory/search", "documented"),
 
   // Read-only shared view
-  sharedView: e("sharedView", "GET", "/share/{token}", "proposed"),
-  sharedEvents: e("sharedEvents", "GET", "/share/{token}/events", "proposed"),
-  sharedStream: e("sharedStream", "GET", "/share/{token}/stream", "proposed"),
-  sharedScorecard: e("sharedScorecard", "GET", "/share/{token}/scorecard", "proposed"),
+  sharedView: e("sharedView", "GET", "/share/{token}", "documented"),
+  sharedEvents: e("sharedEvents", "GET", "/share/{token}/runs/{runId}/events", "documented"),
+  sharedStream: e("sharedStream", "GET", "/share/{token}/runs/{runId}/stream", "documented"),
+  sharedScorecard: e("sharedScorecard", "GET", "/share/{token}/runs/{runId}/scorecard", "documented"),
 } as const satisfies Record<string, EndpointDef>;
 
 export type EndpointKey = keyof typeof ENDPOINTS;
