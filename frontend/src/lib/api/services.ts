@@ -241,3 +241,27 @@ export const shareApi = {
       A.toScorecardEntry(r, runId),
     ),
 };
+
+/* ── Model Context Protocol (MCP) & Assistant ── */
+
+export const assistantApi = {
+  listTools: async (signal?: AbortSignal) =>
+    (await request<{ tools: T.MCPToolDef[] }>(ENDPOINTS.assistantTools, { signal })).tools,
+  createTask: async (runId: string, prompt: string, modelProvider = "claude") =>
+    (await request<{ task: T.MCPTask }>(ENDPOINTS.createAssistantTask, {
+      params: { id: runId },
+      body: { prompt, model_provider: modelProvider },
+    })).task,
+  listTasks: async (runId: string, signal?: AbortSignal) =>
+    (await request<{ tasks: T.MCPTask[] }>(ENDPOINTS.listAssistantTasks, { params: { id: runId }, signal })).tasks,
+  getTask: async (taskId: string, signal?: AbortSignal) =>
+    (await request<{ task: T.MCPTask }>(ENDPOINTS.getAssistantTask, { params: { taskId }, signal })).task,
+  approveTask: async (taskId: string, approved: boolean, reason?: string) =>
+    (await request<{ task: T.MCPTask }>(ENDPOINTS.approveAssistantTask, {
+      params: { taskId },
+      body: { approved, reason },
+    })).task,
+  cancelTask: async (taskId: string) =>
+    (await request<{ task: T.MCPTask }>(ENDPOINTS.cancelAssistantTask, { params: { taskId } })).task,
+};
+

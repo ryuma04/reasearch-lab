@@ -892,3 +892,53 @@ export interface PaperState {
   status: "none" | "queued" | "generating" | "ready" | "partial" | "failed"; run_id: number; error?: string; stale?: boolean; sections: PaperSection[];
   manifest?: { generated_at?: string; completeness?: Record<string, string>; missing?: Record<string, string[]>; method?: string; parent_run_id?: number | null } | null;
 }
+
+/* ───────────────────────────── Model Context Protocol (MCP) & Assistant ───────────────────────────── */
+
+export type MCPTaskStatus = "pending" | "running" | "waiting_approval" | "completed" | "failed" | "cancelled";
+
+export interface MCPApprovalRequest {
+  tool_name: string;
+  arguments: Record<string, unknown>;
+  prompt: string;
+  requested_at: string;
+}
+
+export interface MCPTaskStep {
+  id: string;
+  task_id: string;
+  step_number: number;
+  tool_name: string;
+  input: Record<string, unknown>;
+  output?: Record<string, unknown>;
+  diff?: string;
+  stdout?: string;
+  stderr?: string;
+  metrics?: Record<string, number>;
+  error?: string;
+  duration_ms: number;
+  created_at: string;
+}
+
+export interface MCPTask {
+  id: string;
+  run_id: string;
+  user_id: string;
+  prompt: string;
+  status: MCPTaskStatus;
+  current_step: number;
+  max_steps: number;
+  pending_approval?: MCPApprovalRequest | null;
+  result?: string;
+  error?: string;
+  created_at: string;
+  updated_at: string;
+  steps?: MCPTaskStep[];
+}
+
+export interface MCPToolDef {
+  name: string;
+  description: string;
+  group: string;
+  parameters?: Record<string, unknown>;
+}

@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ArrowUUpLeft, Pause, Play, Stop, Timer } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowUUpLeft, Pause, Play, Robot, Stop, Timer } from "@phosphor-icons/react";
 import { userMessage } from "@/lib/api/errors";
 import { runApi } from "@/lib/api/services";
 import { qk, useAgents, useCheckpoints, useRun, useWorkspace } from "@/lib/hooks/queries";
@@ -13,6 +13,7 @@ import { runStatusMeta } from "@/lib/status";
 import { canOpen, deriveWorkflow, type StageKey } from "@/lib/workflow/state";
 import { formatDuration, shortId } from "@/lib/utils";
 import { ConnectionPill } from "@/components/run/board";
+import { AssistantPanel } from "@/components/assistant/assistant-panel";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/overlays";
 import { Badge, StatusDot } from "@/components/ui/primitives";
@@ -80,6 +81,7 @@ export function WorkflowShell({ workspaceId, runId }: { workspaceId: string; run
     router.replace(`${pathname}${usp.size ? `?${usp}` : ""}`, { scroll: false });
   };
 
+  const [showAssistant, setShowAssistant] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const act = async (action: "pause" | "resume" | "stop" | "retry") => {
     if (busy) return;
@@ -127,12 +129,27 @@ export function WorkflowShell({ workspaceId, runId }: { workspaceId: string; run
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone={meta.tone} solid className="px-3 py-1.5 text-xs">{!ended && run.status !== "waiting_approval" && run.status !== "paused" && <StatusDot tone="sky" pulse />}{meta.label}</Badge>
           {!ended && <ConnectionPill state={stream.state} stale={stream.stale} />}
+          <Button
+            size="sm"
+            variant={showAssistant ? "purple" : "outline"}
+            onClick={() => setShowAssistant(!showAssistant)}
+            className="gap-1.5 shadow-xs"
+          >
+            <Robot size={15} weight="bold" />
+            MCP Assistant
+          </Button>
           {canAct && !ended && run.status === "paused" && <Button size="sm" variant="secondary" disabled={busy} onClick={() => void act("resume")}><Play size={14} weight="fill" /> Resume</Button>}
           {canAct && !ended && run.status !== "paused" && run.status !== "waiting_approval" && <Button size="sm" variant="secondary" disabled={busy} onClick={() => void act("pause")}><Pause size={14} weight="fill" /> Pause</Button>}
           {canAct && !ended && <Button size="sm" variant="outline" disabled={busy} onClick={() => void act("stop")}><Stop size={14} weight="fill" /> Stop</Button>}
           {canAct && wf.terminal === "failed" && <Button size="sm" variant="purple" disabled={busy} onClick={() => void act("retry")}><ArrowUUpLeft size={14} weight="bold" /> Retry from last step</Button>}
         </div>
       </header>
+
+      {showAssistant && (
+        <section className="mb-4">
+          <AssistantPanel runId={runId} onClose={() => setShowAssistant(false)} />
+        </section>
+      )}
 
       {!ended && (stream.state === "reconnecting" || stream.state === "failed" || stream.stale) && (
         <p role="status" className="rounded-2xl bg-warning-soft px-4 py-2 text-sm font-semibold text-warning">
