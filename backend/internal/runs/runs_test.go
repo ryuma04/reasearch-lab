@@ -1,6 +1,9 @@
 package runs
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestKnownAgent(t *testing.T) {
 	for _, ok := range []string{"coding", "coding.writer", "research", "testing.runner", "gap_detective", "whatif"} {
@@ -36,5 +39,35 @@ func TestParseJUnit(t *testing.T) {
 	}
 	if cases[2].Status != "skipped" {
 		t.Errorf("case 2: %+v", cases[2])
+	}
+}
+
+func TestResolveRejectsBadEdits(t *testing.T) {
+	s := &Service{}
+	bad := []CheckpointResponse{
+		{Action: "edit"}, // nothing to edit
+		{Action: "edit", Changes: map[string]any{"a": []any{1}}}, // not a scalar
+		{Action: "nope"},
+	}
+	for i, b := range bad {
+		if _, err := s.Resolve(context.Background(), 1, "plan", b, 1, "web"); err == nil {
+			t.Errorf("case %d: expected a validation error", i)
+		}
+	}
+}
+
+func TestValidateSettingChanges(t *testing.T) {
+	if err := ValidateSettingChanges(map[string]any{"a": 1.0, "b": "x", "c": true}); err != nil {
+		t.Fatalf("valid changes rejected: %v", err)
+	}
+	for name, bad := range map[string]map[string]any{
+		"list":   {"a": []any{1}},
+		"object": {"a": map[string]any{"x": 1}},
+		"null":   {"a": nil},
+		"long":   {"a": string(make([]byte, 201))},
+	} {
+		if ValidateSettingChanges(bad) == nil {
+			t.Errorf("%s: expected an error", name)
+		}
 	}
 }

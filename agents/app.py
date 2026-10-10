@@ -13,9 +13,10 @@ import hmac
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 
-from lab import api, bus, db, intent, llm, memory, steps
+from lab import api, bus, db, intent, llm, memory, report, steps
 from lab.config import settings
 from lab.worker import worker
 
@@ -92,6 +93,18 @@ def understand(req: IntentReq) -> dict:
 @app.get("/runs/{run_id}/summary", dependencies=[Depends(internal)])
 def run_summary(run_id: int) -> dict:
     return {"text": intent.summary(run_id)}
+
+
+@app.get("/runs/{run_id}/report", dependencies=[Depends(internal)])
+def run_report(run_id: int, format: str = "md") -> Response:
+    """Research & Planning report as Markdown, JSON or PDF, built from persisted data."""
+    try:
+        body, ctype, name = report.render(run_id, format)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="run not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return Response(content=body, media_type=ctype, headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 @app.get("/agents", dependencies=[Depends(internal)])

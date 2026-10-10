@@ -34,7 +34,7 @@ export default function WorkspaceOverview() {
     mutationFn: () => runApi.start(id, { compute_budget: ws.data!.compute_budget }),
     onSuccess: async (run) => {
       await qc.invalidateQueries({ queryKey: qk.workspace(id) });
-      router.push(`/workspaces/${id}/live?run=${encodeURIComponent(run.id)}`);
+      router.push(`/workspaces/${id}/run/${encodeURIComponent(run.id)}`);
     },
     onError: (e) => toast.error("Couldn't start the run", userMessage(e)),
   });

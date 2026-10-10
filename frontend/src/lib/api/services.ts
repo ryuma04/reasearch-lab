@@ -77,8 +77,14 @@ export const runApi = {
   checkpoint: (id: string, name: string, body: T.CheckpointRequest) =>
     request<unknown>(ENDPOINTS.checkpoint, {
       params: { id, name },
-      body: { action: body.decision, instruction: body.instructions },
+      body: { action: body.decision, instruction: body.instructions, option: body.option, changes: body.changes },
     }) as Promise<T.CheckpointResult | undefined>,
+  checkpoints: async (id: string, signal?: AbortSignal) =>
+    unwrapList<unknown>(await request(ENDPOINTS.checkpoints, { params: { id }, signal }), "checkpoints").map(A.toCheckpoint),
+  /** Saves unapproved plan edits on the server (survives refresh / another browser). Nothing runs until approval. */
+  savePlanDraft: (id: string, body: { changes: Record<string, string | number | boolean>; note: string }) =>
+    request<unknown>(ENDPOINTS.planDraft, { params: { id }, body }),
+  discardPlanDraft: (id: string) => request<unknown>(ENDPOINTS.planDraftDelete, { params: { id } }),
   /** `agent` is a board card ("coding") or a full agent id ("coding.writer"); "run" controls the whole run. */
   agentAction: (id: string, agent: string, body: T.AgentActionRequest) =>
     request<unknown>(ENDPOINTS.agentAction, {
@@ -106,7 +112,7 @@ export const runApi = {
   gaps: async (id: string, signal?: AbortSignal) => A.toGap(await request(ENDPOINTS.gaps, { params: { id }, signal }), id),
   map: async (id: string, signal?: AbortSignal) => A.toMap(await request(ENDPOINTS.map, { params: { id }, signal }), id),
   memory: async (id: string, signal?: AbortSignal) => A.toRunMemory(await request(ENDPOINTS.runMemory, { params: { id }, signal })),
-  reportUrl: (id: string, format: "md" | "pdf") => apiUrl(ENDPOINTS.report, { id }, { format }),
+  reportUrl: (id: string, format: "md" | "json" | "pdf") => apiUrl(ENDPOINTS.report, { id }, { format }),
   briefing: (id: string, signal?: AbortSignal) => request<T.AudioBriefing>(ENDPOINTS.briefing, { params: { id }, signal }),
   metricProof: async (metricId: string, signal?: AbortSignal) =>
     A.toMetric(await request(ENDPOINTS.metricProof, { params: { id: metricId }, signal })),

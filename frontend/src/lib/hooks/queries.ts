@@ -13,6 +13,9 @@ export const qk = {
   workspace: (id: string) => ["workspace", id] as const,
   notes: (id: string) => ["workspace", id, "notes"] as const,
   run: (id: string) => ["run", id] as const,
+  checkpoints: (id: string) => ["run", id, "checkpoints"] as const,
+  fileTree: (id: string) => ["run", id, "files"] as const,
+  fileAll: (id: string) => ["run", id, "file"] as const,
   runEvents: (id: string) => ["run", id, "events"] as const,
   scorecard: (id: string) => ["run", id, "scorecard"] as const,
   settings: (id: string) => ["run", id, "settings"] as const,
@@ -57,6 +60,8 @@ export const useNotes = (id: string) =>
 
 export const useRun = (id: string | null, refetchInterval?: number | false) =>
   useQuery({ queryKey: qk.run(id ?? ""), queryFn: ({ signal }) => runApi.get(id!, signal), enabled: !!id, refetchInterval });
+export const useCheckpoints = (id: string | null) =>
+  useQuery({ queryKey: qk.checkpoints(id ?? ""), queryFn: ({ signal }) => runApi.checkpoints(id!, signal), enabled: !!id });
 export const useRunEvents = (id: string | null) =>
   useQuery({ queryKey: qk.runEvents(id ?? ""), queryFn: ({ signal }) => runApi.events(id!, signal), enabled: !!id });
 export const useScorecard = (id: string | null) =>

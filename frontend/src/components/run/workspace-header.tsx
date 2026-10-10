@@ -24,8 +24,10 @@ export function useSelectedRun(workspaceId: string) {
 
 const TABS = [
   { seg: "", label: "Overview" },
+  { seg: "/run/:run", label: "Workflow" },
   { seg: "/live", label: "Live board" },
   { seg: "/map", label: "Research map" },
+  { seg: "/explorer", label: "Gap Explorer" },
   { seg: "/results/research", label: "Results", match: "/results" },
   { seg: "/replay", label: "Replay" },
   { seg: "/publish", label: "Publish" },
@@ -77,11 +79,12 @@ export function WorkspaceHeader({ id }: { id: string }) {
       </div>
 
       <nav className="-mx-1 flex gap-1 overflow-x-auto rounded-full bg-white p-1 shadow-clay-sm" aria-label="Workspace sections">
-        {TABS.map((t) => {
-          const href = `${base}${t.seg}`;
+        {TABS.filter((t) => !t.seg.includes(":run") || runId).map((t) => {
+          const isFlow = t.seg.includes(":run");
+          const href = `${base}${isFlow ? t.seg.replace(":run", encodeURIComponent(runId ?? "")) : t.seg}`;
           const on = t.match ? pathname.startsWith(`${base}${t.match}`) : pathname === href;
           return (
-            <Link key={t.seg} href={`${href}${q}`} aria-current={on ? "page" : undefined}
+            <Link key={t.seg} href={isFlow ? href : `${href}${q}`} aria-current={on ? "page" : undefined}
               className={cn("relative inline-flex h-9 shrink-0 items-center rounded-full px-4 text-sm font-semibold", on ? "text-white" : "text-ink-soft hover:text-ink")}>
               {on && <motion.span layoutId="ws-tab" className="absolute inset-0 rounded-full bg-pill" transition={{ type: "spring", stiffness: 400, damping: 32 }} />}
               <span className="relative">{t.label}</span>

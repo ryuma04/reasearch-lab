@@ -161,6 +161,8 @@ export interface Run {
   started_at: ISODate | null;
   finished_at: ISODate | null;
   git_commit: string | null;
+  /** Why the run failed or stopped, as recorded by the backend. */
+  error?: string | null;
   /** @proposed */
   stage?: RunStage;
   /** @proposed */
@@ -187,7 +189,7 @@ export interface RunEvent {
   why?: string | null;
   links?: Record<string, string | undefined>;
   cost?: { tokens?: number; sandbox_seconds?: number };
-  /** @proposed — structured payload (stage, status, progress, checkpoint name, …). */
+  /** @proposed — structured payload (stage, status, progress, checkpoint name, …). `rawType` is the backend's own event type. */
   data?: Record<string, unknown>;
 }
 
@@ -236,8 +238,25 @@ export type CheckpointDecision = "approve" | "edit" | "reject";
 /** POST /runs/{id}/checkpoints/{name} */
 export interface CheckpointRequest {
   decision: CheckpointDecision;
-  /** Required for "edit" (e.g. "use only 10,000 training images"); optional reason for "reject". */
+  /** Free-text edit (e.g. "use only 10,000 training images"), or a note for help / reject. */
   instructions?: string;
+  /** Exact setting edits at the plan checkpoint, e.g. {"train.epochs_student": 10}. */
+  changes?: Record<string, string | number | boolean>;
+  /** Chosen option at the long_run checkpoint ("reduce" | "full"). */
+  option?: string;
+}
+
+/** GET /runs/{id}/checkpoints — approvals asked of the researcher (plan, long_run, help). */
+export interface RunCheckpoint {
+  id: ID;
+  run_id: ID;
+  name: string;
+  status: "pending" | "approved" | "edited" | "rejected";
+  /** What the researcher is asked to review (shape depends on `name`). */
+  payload: Record<string, unknown>;
+  response: Record<string, unknown>;
+  created_at: ISODate;
+  resolved_at: ISODate | null;
 }
 
 export interface CheckpointResult {
@@ -283,6 +302,13 @@ export interface Claim {
   table_ref: string | null;
   position_on_page: PagePosition | null;
   condition: string | null;
+  /** Exact sentence from the paper the number was taken from. */
+  quote?: string | null;
+  /** Relative tolerance used to call a result a "match". */
+  tolerance?: number | null;
+  higher_is_better?: boolean;
+  /** Name expected in results/metrics.json. */
+  metric_name?: string | null;
 }
 
 /** §22 metrics — the only source of measured numbers (Hero 2). */
@@ -330,6 +356,8 @@ export interface RunSetting {
   source: SettingSource;
   source_ref: string | null;
   reason: string | null;
+  /** The paper's own value, when ours was changed to fit the budget. */
+  paper_value?: string | null;
 }
 
 /* ───────────────────────────── What-ifs ───────────────────────────── */
@@ -556,6 +584,10 @@ export interface SourceRef {
   fits_budget: boolean | null;
   used: boolean | null;
   notes: string | null;
+  /** Real metadata when the agents reported it (related papers). */
+  year?: number | null;
+  citations?: number | null;
+  relation?: string | null;
 }
 
 export interface MissingDetail {
@@ -631,7 +663,8 @@ export interface GapAnalysis {
   seed_runs?: Metric[];
 }
 
-export type MapNodeKind = "paper" | "claim" | "source" | "dataset" | "code" | "test" | "result" | "agent" | "note";
+export type MapNodeKind =
+  | "paper" | "claim" | "source" | "related" | "dataset" | "code" | "file" | "test" | "result" | "experiment" | "whatif" | "gap" | "agent" | "note";
 export type MapNodeStatus = "waiting" | "working" | "done" | "problem";
 
 export interface MapNode {
@@ -640,6 +673,12 @@ export interface MapNode {
   label: string;
   status: MapNodeStatus;
   detail?: string | null;
+  /** Original source (paper, dataset, repository) when the agents found a valid web URL. Never guessed. */
+  url?: string | null;
+  /** paper | dataset | repository, as reported by the agents. */
+  source_type?: string | null;
+  /** Facts the backend really reported: year, citations, licence, stars… */
+  meta?: Record<string, unknown>;
 }
 
 export interface MapEdge {

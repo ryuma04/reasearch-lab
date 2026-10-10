@@ -314,6 +314,9 @@ type CheckpointResponse struct {
 	Action      string `json:"action"` // approve | edit | reject
 	Instruction string `json:"instruction,omitempty"`
 	Option      string `json:"option,omitempty"`
+	// Changes are exact setting edits at the plan checkpoint ({"train.epochs_student": 10});
+	// the agent worker validates the names against the run's settings.
+	Changes map[string]any `json:"changes,omitempty"`
 }
 
 // POST /runs/{id}/checkpoints/{name} {"action": "approve|edit|reject", "instruction": "...", "option": "..."}
@@ -340,10 +343,16 @@ func (s *Service) Resolve(ctx context.Context, runID int64, name string, body Ch
 	if status == "" {
 		return nil, httpx.Errorf(http.StatusBadRequest, "action must be approve, edit or reject")
 	}
-	if body.Action == "edit" && strings.TrimSpace(body.Instruction) == "" {
-		return nil, httpx.Errorf(http.StatusBadRequest, "edit needs an instruction, e.g. \"use only 10,000 training images\"")
+	if body.Action == "edit" && strings.TrimSpace(body.Instruction) == "" && len(body.Changes) == 0 {
+		return nil, httpx.Errorf(http.StatusBadRequest, "edit needs an instruction or setting changes, e.g. \"use only 10,000 training images\"")
+	}
+	if err := ValidateSettingChanges(body.Changes); err != nil {
+		return nil, err
 	}
 	resp := map[string]any{"action": body.Action, "instruction": body.Instruction, "option": body.Option, "user_id": userID, "via": via}
+	if len(body.Changes) > 0 {
+		resp["changes"] = body.Changes
+	}
 	cp, err := s.store.ResolveCheckpoint(ctx, runID, name, status, resp)
 	if err == store.ErrNotFound {
 		return nil, httpx.Errorf(http.StatusConflict, "no pending checkpoint named "+name+" for this run")
@@ -570,7 +579,12 @@ func (s *Service) Research(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	brief, _ := os.ReadFile(filepath.Join(s.projectDir(run), "research", "brief.md"))
-	httpx.JSON(w, http.StatusOK, map[string]any{"papers": papers, "brief_markdown": string(brief)})
+	out := map[string]any{"papers": papers, "brief_markdown": string(brief)}
+	// The structured brief (methods, missing details, sources with their URLs, related papers) written by the agents.
+	if raw, err := os.ReadFile(filepath.Join(s.projectDir(run), "research", "brief.json")); err == nil && json.Valid(raw) {
+		out["brief"] = json.RawMessage(raw)
+	}
+	httpx.JSON(w, http.StatusOK, out)
 	return nil
 }
 

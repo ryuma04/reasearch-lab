@@ -36,7 +36,19 @@ export default function NewWorkspacePage() {
   const [startNow, setStartNow] = React.useState(true);
   const [errors, setErrors] = React.useState<Record<string, string>>({});
   const [uploads, setUploads] = React.useState<UploadState[]>([]);
-  const [phase, setPhase] = React.useState<"form" | "submitting" | "partial">("form");
+  const [phase, setPhase] = React.useState<"form" | "submitting" | "partial" | "run_failed">("form");
+  // The workflow opens in its own browser tab. The tab is opened synchronously from the click (popup blockers allow that),
+  // then pointed at the run once the server has created it.
+  const tabRef = React.useRef<Window | null>(null);
+  const runIdRef = React.useRef<string | null>(null);
+  const ensureTab = () => {
+    if (!startNow) return;
+    if (!tabRef.current || tabRef.current.closed) tabRef.current = window.open("about:blank", "_blank");
+  };
+  const closeTab = () => {
+    if (tabRef.current && !tabRef.current.closed) tabRef.current.close();
+    tabRef.current = null;
+  };
   const [workspaceId, setWorkspaceId] = React.useState<string | null>(null);
   const abortRef = React.useRef<AbortController | null>(null);
   const dropRef = React.useRef<HTMLInputElement>(null);
@@ -110,12 +122,23 @@ export default function NewWorkspacePage() {
     await qc.invalidateQueries({ queryKey: qk.workspaces });
     if (startNow) {
       try {
-        const run = await runApi.start(wsId, { compute_budget: budget });
-        toast.success("Run started", "The agent team is getting to work.");
-        router.push(`/workspaces/${wsId}/live?run=${encodeURIComponent(run.id)}`);
+        // Reuse the run if an earlier attempt already created it: a retry must never start a second run.
+        if (!runIdRef.current) runIdRef.current = (await runApi.start(wsId, { compute_budget: budget })).id;
+        const url = `/workspaces/${wsId}/run/${encodeURIComponent(runIdRef.current)}`;
+        toast.success("Run started", "The workflow opened in a new tab.");
+        if (tabRef.current && !tabRef.current.closed) {
+          tabRef.current.location.href = url;
+          router.push(`/workspaces/${wsId}`);
+        } else {
+          toast.info("Your browser blocked the new tab", "Opening the workflow here instead.");
+          router.push(url);
+        }
         return;
       } catch (e) {
+        closeTab();
+        setPhase("run_failed");
         toast.error("Workspace created, but the run didn't start", userMessage(e));
+        return;
       }
     }
     router.push(`/workspaces/${wsId}`);
@@ -123,7 +146,9 @@ export default function NewWorkspacePage() {
 
   const submit = async (ev: React.FormEvent) => {
     ev.preventDefault();
+    if (phase === "submitting") return; // ignore duplicate clicks while a submission is running
     if (!validate()) return;
+    ensureTab();
     setPhase("submitting");
     try {
       const ws = workspaceId ? { id: workspaceId } : await workspaceApi.create({ title: title.trim(), compute_budget: budget, note: note.trim() || undefined });
@@ -137,6 +162,7 @@ export default function NewWorkspacePage() {
       await finish(ws.id);
     } catch (e) {
       setPhase("form");
+      closeTab();
       if (isApiError(e) && Object.keys(e.fields).length) setErrors(e.fields);
       toast.error("Couldn't create the workspace", userMessage(e));
     }
@@ -144,6 +170,7 @@ export default function NewWorkspacePage() {
 
   const retryFailed = async () => {
     if (!workspaceId) return;
+    ensureTab();
     setPhase("submitting");
     const idx = uploads.map((u, i) => (u.status === "error" ? i : -1)).filter((i) => i >= 0);
     const failed = await runUploads(workspaceId, idx);
@@ -230,7 +257,7 @@ export default function NewWorkspacePage() {
             </Chip>
           ))}
         </div>
-        <label className="mt-5 flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={startNow} onChange={(e) => setStartNow(e.target.checked)} className="h-4 w-4 accent-purple" /> Start the run right away and open the Live Agent Board</label>
+        <label className="mt-5 flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={startNow} onChange={(e) => setStartNow(e.target.checked)} className="h-4 w-4 accent-purple" /> Start the run right away and open the live workflow in a new tab</label>
       </Card>
 
       {uploads.length > 0 && (
@@ -252,13 +279,20 @@ export default function NewWorkspacePage() {
 
       <div className="sticky bottom-24 z-10 flex flex-wrap justify-end gap-2 rounded-[24px] bg-canvas-cool/90 p-2 backdrop-blur md:bottom-4">
         {busy && <Button type="button" variant="ghost" onClick={() => abortRef.current?.abort()}>Cancel uploads</Button>}
+        {phase === "run_failed" && workspaceId && (
+          <>
+            <p className="self-center text-sm font-semibold text-danger">The workspace is saved, but the run did not start.</p>
+            <Button type="button" variant="secondary" onClick={() => router.push(`/workspaces/${workspaceId}`)}>Open the workspace</Button>
+            <Button type="button" variant="purple" onClick={() => { ensureTab(); setPhase("submitting"); void finish(workspaceId); }}>Retry starting the run</Button>
+          </>
+        )}
         {phase === "partial" && (
           <>
             <Button type="button" variant="secondary" onClick={() => void retryFailed()}>Retry failed uploads</Button>
-            {paperUploadedOk && workspaceId && <Button type="button" variant="outline" onClick={() => void finish(workspaceId)}>Continue without them</Button>}
+            {paperUploadedOk && workspaceId && <Button type="button" variant="outline" onClick={() => { ensureTab(); void finish(workspaceId); }}>Continue without them</Button>}
           </>
         )}
-        {phase !== "partial" && (
+        {phase !== "partial" && phase !== "run_failed" && (
           <Button type="submit" size="lg" variant="purple" loading={busy}>{busy ? "Creating…" : startNow ? "Create & start run" : "Create workspace"}</Button>
         )}
       </div>

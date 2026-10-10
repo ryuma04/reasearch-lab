@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -54,6 +55,33 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 		return json.Unmarshal(data, out)
 	}
 	return nil
+}
+
+// Download fetches a file from the agent service (report exports). Returns body, content type and file name.
+func (c *Client) Download(ctx context.Context, path string) ([]byte, string, string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+path, nil)
+	if err != nil {
+		return nil, "", "", err
+	}
+	req.Header.Set("X-Internal-Token", c.Token)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, "", "", err
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 50<<20))
+	if resp.StatusCode >= 300 {
+		return nil, "", "", fmt.Errorf("agents service GET %s: %d %s", path, resp.StatusCode, string(data))
+	}
+	name := ""
+	if cd := resp.Header.Get("Content-Disposition"); cd != "" {
+		if _, after, ok := strings.Cut(cd, `filename="`); ok {
+			name, _, _ = strings.Cut(after, `"`)
+		}
+	}
+	return data, resp.Header.Get("Content-Type"), name, nil
 }
 
 func (c *Client) Health(ctx context.Context) (map[string]any, error) {

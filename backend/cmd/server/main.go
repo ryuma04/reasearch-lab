@@ -18,6 +18,7 @@ import (
 	"github.com/ryuma04/tapu-sena/backend/internal/auth"
 	"github.com/ryuma04/tapu-sena/backend/internal/bus"
 	"github.com/ryuma04/tapu-sena/backend/internal/config"
+	"github.com/ryuma04/tapu-sena/backend/internal/explorer"
 	"github.com/ryuma04/tapu-sena/backend/internal/githubpush"
 	"github.com/ryuma04/tapu-sena/backend/internal/httpx"
 	"github.com/ryuma04/tapu-sena/backend/internal/proof"
@@ -68,6 +69,7 @@ func run() error {
 	rl := ratelimit.New(b.Redis, cfg.RateLimits)
 	pushSvc := githubpush.New(cfg, st, b, authSvc)
 	voiceSvc := voice.New(cfg, st, agents)
+	explorerSvc := explorer.New(cfg, st, b)
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Recoverer)
@@ -138,6 +140,15 @@ func run() error {
 		r.Get("/metrics/{id}/proof", h(runSvc.MetricProof))
 		r.Get("/papers/{id}/pdf", h(runSvc.PaperPDF))
 
+		r.Put("/runs/{id}/plan/draft", h(runSvc.SavePlanDraft))
+		r.Delete("/runs/{id}/plan/draft", h(runSvc.DiscardPlanDraft))
+		r.Get("/runs/{id}/report", h(runSvc.Report))
+		// Research Gap Explorer (independent feature: own tables, read-only access to the research output)
+		r.Get("/runs/{id}/explorer", h(explorerSvc.Get))
+		r.Post("/runs/{id}/explorer", h(explorerSvc.Start))
+		r.Put("/runs/{id}/explorer/feedback", h(explorerSvc.SaveFeedback))
+		r.Delete("/runs/{id}/explorer/feedback/{feedbackId}", h(explorerSvc.DeleteFeedback))
+		r.Post("/runs/{id}/explorer/ideas", h(explorerSvc.AddIdea))
 		r.Get("/runs/{id}/tests", h(runSvc.Tests))
 		r.Get("/runs/{id}/memory", h(runSvc.RunMemory))
 		r.Get("/agents", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, http.StatusOK, runs.AgentList) })

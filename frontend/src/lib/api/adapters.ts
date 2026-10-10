@@ -6,6 +6,7 @@
  * place, so pages and components keep using the domain types. Nothing here invents data:
  * a field the backend does not send becomes null/undefined, never a made-up value.
  */
+import { safeUrl } from "@/lib/sources";
 import type * as T from "./types";
 
 type Obj = Record<string, unknown>;
@@ -115,6 +116,7 @@ export function toRun(raw: unknown): T.Run {
     started_at: s(r.started_at),
     finished_at: s(r.finished_at),
     git_commit: s(r.git_commit),
+    error: s(r.error),
     stage: STAGE[String(r.stage)],
     compute_budget: (r.compute_budget as T.ComputeBudget) ?? undefined,
   };
@@ -162,7 +164,7 @@ export function toEvent(raw: unknown): T.RunEvent {
     links[k] = String(v);
   }
   const type = String(e.type ?? "");
-  const data: Record<string, unknown> = {};
+  const data: Record<string, unknown> = { rawType: type };
   if (type === "stage" && typeof linksIn.stage === "string") data.stage = STAGE[linksIn.stage] ?? linksIn.stage;
   if (typeof linksIn.checkpoint === "string") data.checkpoint = linksIn.checkpoint;
   if (type === "run_stopped" || type === "run_rejected") data.terminal = type;
@@ -177,7 +179,7 @@ export function toEvent(raw: unknown): T.RunEvent {
     why: s(e.why),
     links,
     cost: { tokens: num(cost.tokens) ?? 0, sandbox_seconds: num(cost.sandbox_seconds) ?? 0 },
-    data: Object.keys(data).length ? data : undefined,
+    data,
   };
 }
 
@@ -204,6 +206,25 @@ export function toClaim(raw: unknown): T.Claim {
     table_ref: s(c.table_ref),
     position_on_page: toPosition(c.position_on_page),
     condition: s(c.condition),
+    quote: s(c.quote),
+    tolerance: num(c.tolerance),
+    higher_is_better: c.higher_is_better === true,
+    metric_name: s(c.metric_name),
+  };
+}
+
+export function toCheckpoint(raw: unknown): T.RunCheckpoint {
+  const c = isObj(raw) ? raw : {};
+  const status = String(c.status);
+  return {
+    id: id(c.id),
+    run_id: id(c.run_id),
+    name: String(c.name ?? ""),
+    status: (["pending", "approved", "edited", "rejected"].includes(status) ? status : "pending") as T.RunCheckpoint["status"],
+    payload: isObj(c.payload) ? c.payload : {},
+    response: isObj(c.response) ? c.response : {},
+    created_at: String(c.created_at ?? ""),
+    resolved_at: s(c.resolved_at),
   };
 }
 
@@ -251,6 +272,7 @@ export function toSetting(raw: unknown, runId: string): T.RunSetting {
     source: (r.source === "researcher" ? "assumption" : r.source) as T.SettingSource,
     source_ref: s(r.source_ref) ?? (r.source === "researcher" ? "changed by the researcher" : null),
     reason: s(r.reason),
+    paper_value: s(r.paper_value),
   };
 }
 
@@ -279,24 +301,38 @@ export function toWhatIf(raw: unknown, runId: string): T.WhatIfBranch {
   };
 }
 
-/** GET /runs/{id}/research → Research Brief. The brief body is the Markdown the agent wrote. */
+/** GET /runs/{id}/research → Research Brief: the Markdown report plus the structured brief.json the agents wrote. */
 export function toBrief(raw: unknown, runId: string): T.ResearchBrief & { brief_markdown: string | null } {
   const r = isObj(raw) ? raw : {};
   const papers = arr(r.papers).filter(isObj);
   const md = s(r.brief_markdown);
+  const sj = isObj(r.brief) ? r.brief : null;
+  const jp = sj ? arr(sj.papers).filter(isObj) : [];
+  const src = sj && isObj(sj.sources) ? sj.sources : {};
+  const sources: T.SourceRef[] = [];
+  arr(src.datasets).filter(isObj).forEach((d, i) =>
+    sources.push({ id: `dataset:${i}`, kind: "dataset", title: String(d.name ?? "Dataset"), url: safeUrl(d.url), official: d.official === true, license: s(d.licence), size: s(d.size),
+      fits_budget: typeof d.fits_budget === "boolean" ? d.fits_budget : null, used: true, notes: d.user_provided ? "provided by you" : s(d.how), relation: "used by the paper" }));
+  arr(src.repositories).filter(isObj).forEach((x, i) =>
+    sources.push({ id: `repo:${i}`, kind: "code", title: String(x.name ?? x.url ?? "Repository"), url: safeUrl(x.url), official: x.official === true, license: s(x.licence), size: null,
+      fits_budget: null, used: null, notes: x.user_provided ? "provided by you" : x.official ? "official code" : "found by title search, not confirmed official", relation: s(x.description) }));
+  arr(src.related_papers).filter(isObj).forEach((x, i) =>
+    sources.push({ id: `related:${i}`, kind: "paper", title: String(x.title ?? "Related paper"), url: x.arxiv ? safeUrl(`https://arxiv.org/abs/${String(x.arxiv)}`) : null, official: null, license: null, size: null,
+      fits_budget: null, used: null, notes: null, year: num(x.year), citations: num(x.citations), relation: "cites this paper" }));
   return {
     run_id: runId,
-    summary: papers.map((p) => s(p.summary)).filter(Boolean).join("\n\n"),
-    method: [],
+    summary: (jp.length ? jp : papers).map((p) => s(p.summary)).filter(Boolean).join("\n\n"),
+    method: jp.flatMap((p) => arr(p.method).map(String)),
     claims: papers.flatMap((p) => arr(p.claims).map((c) => toClaim({ ...(c as Obj), paper_id: p.id }))),
-    missing_details: [],
-    sources: [],
-    recommendation: "",
+    missing_details: jp.flatMap((p) => arr(p.missing_details).map((m) => ({ name: String(m), note: "Not stated in the paper", assumed_value: null }))),
+    sources,
+    recommendation: s(src.recommendation) ?? "",
     brief_markdown: md,
-  };
+    ...(sj ? { title: s(jp[0]?.title) ?? undefined } : {}),
+  } as T.ResearchBrief & { brief_markdown: string | null };
 }
 
-const MAP_KINDS = new Set(["paper", "claim", "source", "dataset", "code", "test", "result", "agent", "note"]);
+const MAP_KINDS = new Set(["paper", "claim", "source", "related", "dataset", "code", "file", "test", "result", "experiment", "whatif", "gap", "agent", "note"]);
 const MAP_STATUS = new Set(["waiting", "working", "done", "problem"]);
 
 export function toMap(raw: unknown, runId: string): T.ResearchMap {
@@ -310,6 +346,9 @@ export function toMap(raw: unknown, runId: string): T.ResearchMap {
       label: String(n.label ?? n.id ?? ""),
       status: (MAP_STATUS.has(String(n.status)) ? n.status : "waiting") as T.MapNodeStatus,
       detail: s(n.detail),
+      url: safeUrl(n.url),
+      source_type: s(n.source_type),
+      meta: isObj(n.meta) ? n.meta : undefined,
     })),
     edges: arr(g.edges).filter(isObj).map((e, i) => ({
       id: id(e.id ?? `e${i}`),

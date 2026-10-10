@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Copy, Check } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
+import { safeUrl } from "@/lib/sources";
 
 /** Safe Markdown: react-markdown never renders raw HTML (no rehype-raw), links open safely. */
 export function Markdown({ children, className }: { children: string; className?: string }) {
@@ -12,7 +13,7 @@ export function Markdown({ children, className }: { children: string; className?
     <div className={cn("prose-lab", className)}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        components={{ a: ({ href, children: c }) => <a href={href} target="_blank" rel="noopener noreferrer nofollow">{c}</a> }}
+        components={{ a: ({ href, children: c }) => (safeUrl(href) ? <a href={safeUrl(href)!} target="_blank" rel="noopener noreferrer nofollow">{c}</a> : <span>{c}</span>) }}
       >
         {children}
       </ReactMarkdown>

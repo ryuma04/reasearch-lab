@@ -139,6 +139,8 @@ type sample struct {
 	branchMetric                              string
 	memory                                    [][2]string // kind, text
 	recipeDir                                 string      // real project files to copy (relative to the repo root)
+	sources                                   []string    // datasets / code found by the Source Finder
+	codeFiles                                 []string    // files shown on the Research Map
 	extraFiles                                map[string]string
 }
 
@@ -229,19 +231,7 @@ func (s *seeder) workspace(x sample) {
 			run, t, e.agent, e.typ, e.msg, e.why, j(links), j(map[string]any{"tokens": e.tokens, "sandbox_seconds": e.sandbox}))
 	}
 
-	// Research map (Observer output).
-	nodes := []map[string]any{{"id": "paper", "kind": "paper", "label": x.paperTitle, "status": "done"}}
-	edges := []map[string]any{}
-	for i, c := range x.claims {
-		st := map[string]string{"match": "done", "close": "done", "different": "problem"}[c.status]
-		id := fmt.Sprintf("claim:%d", i)
-		nodes = append(nodes, map[string]any{"id": id, "kind": "claim", "label": c.desc, "status": st})
-		edges = append(edges, map[string]any{"from": "paper", "to": id, "label": "claims"}, map[string]any{"from": "code:train", "to": id, "label": "measures"})
-	}
-	nodes = append(nodes, map[string]any{"id": "code:train", "kind": "code", "label": "src/train.py", "status": "done"},
-		map[string]any{"id": "test:claims", "kind": "test", "label": "tests/test_claims.py", "status": "done"})
-	edges = append(edges, map[string]any{"from": "test:claims", "to": "code:train", "label": "tests"})
-	s.exec(`INSERT INTO research_maps (run_id, graph, version) VALUES ($1,$2,1)`, run, j(map[string]any{"nodes": nodes, "edges": edges}))
+	s.exec(`INSERT INTO research_maps (run_id, graph, version) VALUES ($1,$2,1)`, run, j(sampleMap(x)))
 
 	// What-if branches as child runs with their own (sample) metric.
 	for i, b := range x.branches {
@@ -280,6 +270,75 @@ func repoRoot() string {
 		dir = filepath.Dir(dir)
 	}
 	return "."
+}
+
+// sampleMap builds the Observer graph the real agents would report for this run: the same
+// node ids, kinds and edge labels as agents/lab (research.py, coding.py, testing.py, gap.py, whatif.py).
+func sampleMap(x sample) map[string]any {
+	nodes := []map[string]any{}
+	edges := []map[string]any{}
+	node := func(id, kind, label, status string) {
+		nodes = append(nodes, map[string]any{"id": id, "kind": kind, "label": label, "status": status})
+	}
+	edge := func(a, b, label string) { edges = append(edges, map[string]any{"from": a, "to": b, "label": label}) }
+
+	agents := []string{"research.paper_reader", "research.source_finder", "coding.writer", "coding.reviewer", "testing.designer", "testing.runner", "whatif"}
+	if x.gap != nil {
+		agents = append(agents, "gap_detective")
+	}
+	for _, a := range agents {
+		node("agent:"+a, "agent", a, "done")
+	}
+	node("paper", "paper", x.paperTitle, "done")
+	anyDifferent := false
+	for i, c := range x.claims {
+		st := map[string]string{"match": "done", "close": "done", "different": "problem"}[c.status]
+		anyDifferent = anyDifferent || c.status == "different"
+		id := fmt.Sprintf("claim:%d", i)
+		node(id, "claim", c.desc, st)
+		edge("paper", id, "claims")
+	}
+	for i, src := range x.sources {
+		id := fmt.Sprintf("dataset:%d", i)
+		node(id, "source", src, "done")
+		edge(id, "paper", "used by")
+	}
+	files := x.codeFiles
+	if len(files) == 0 {
+		files = []string{"src/train.py", "configs/config.yaml"}
+	}
+	for _, f := range files {
+		node("file:"+f, "code", f, "done")
+		edge("file:"+f, "agent:coding.writer", "written by")
+	}
+	testStatus := "done"
+	if anyDifferent {
+		testStatus = "problem"
+	}
+	node("test:tests/test_correctness.py", "test", "tests/test_correctness.py", "done")
+	node("test:tests/test_claims.py", "test", "tests/test_claims.py", testStatus)
+	edge("test:tests/test_correctness.py", "file:src/train.py", "checks")
+	node("result:metrics", "result", "results/metrics.json", "done")
+	edge("file:src/train.py", "result:metrics", "produced")
+	for i, c := range x.claims {
+		id := fmt.Sprintf("claim:%d", i)
+		edge(id, "test:tests/test_claims.py", "tested by")
+		edge("result:metrics", id, c.status)
+	}
+	if x.gap != nil && x.gapClaim >= 0 {
+		node("gap:0", "experiment", "Gap Detective: one-change experiments", "done")
+		edge(fmt.Sprintf("claim:%d", x.gapClaim), "gap:0", "why different?")
+	}
+	for i, b := range x.branches {
+		st := "done"
+		if b[2] == "stopped_early" {
+			st = "waiting"
+		}
+		id := fmt.Sprintf("whatif:%d", i)
+		node(id, "whatif", "What if: "+b[0].(string), st)
+		edge("result:metrics", id, "what if")
+	}
+	return map[string]any{"nodes": nodes, "edges": edges}
 }
 
 func metricsMap(cs []claim) map[string]float64 {

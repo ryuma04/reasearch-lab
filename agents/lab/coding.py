@@ -97,6 +97,24 @@ def plan_settings(run_id: int, brief: dict, budget: str) -> list[dict]:
     return items
 
 
+def apply_setting_changes(run_id: int, changes: dict, note: str = "") -> list[str]:
+    """Apply exact setting edits from the plan editor. Only names the run already has, only scalar values."""
+    if not isinstance(changes, dict) or not changes:
+        return []
+    known = {s["name"]: s for s in load_settings(run_id)}
+    items = []
+    for name, value in changes.items():
+        if name not in known or isinstance(value, (dict, list)) or value is None:
+            continue
+        if str(known[name]["value"]) == str(value):
+            continue
+        items.append({"name": name, "value": value, "source": "researcher",
+                      "reason": "edited in the plan editor" + (f": {note}" if note else "")})
+    if items:
+        record_settings(run_id, items)
+    return [f"{i['name']} = {i['value']}" for i in items]
+
+
 def apply_researcher_edit(run_id: int, instruction: str) -> list[str]:
     """Turn a plan edit ('use only 10,000 training images') into setting changes."""
     names = [s["name"] for s in load_settings(run_id)]

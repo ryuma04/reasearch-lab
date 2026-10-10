@@ -39,6 +39,8 @@ def test_claim(name, paper, tol):
 		summary:    "A small network trained on the softened outputs (T=20) of a large network nearly matches it on MNIST.",
 		budget:     "standard",
 		recipeDir:  "agents/lab/recipes/distillation_files",
+		sources:    []string{"MNIST (torchvision)", "Fashion-MNIST (for the what-if)"},
+		codeFiles:  []string{"src/train.py", "src/models.py", "src/distill.py", "src/download_data.py", "configs/config.yaml", "requirements.txt"},
 		extraFiles: map[string]string{
 			"tests/test_claims.py": claimsTest,
 			"results/junit.xml":    junit,

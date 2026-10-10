@@ -105,6 +105,9 @@ class Worker:
             if typ in ("start_run", "resume", "retry"):
                 with self._lock(run_id):  # one graph step at a time per run
                     self._graph_job(typ, run_id, job)
+            elif typ == "explorer":  # Research Gap Explorer: independent of the research workflow
+                from .explorer import run as explorer_run
+                explorer_run.run(int(job.get("analysis_id") or 0))
             elif typ == "whatif":
                 self._guard(run_id, lambda: whatif.run_question(run_id, job["question_id"], job["question"]), main=False)
             else:

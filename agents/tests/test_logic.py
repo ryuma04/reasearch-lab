@@ -79,3 +79,19 @@ def test_recipe_settings_have_sources():
                 assert s.get("paper_value")
     assert distillation.matches("", "1503.02531v1", "")
     assert set(distillation.files()) >= {"src/train.py", "src/download_data.py", "tests/test_correctness.py", "requirements.txt"}
+
+
+def test_apply_setting_changes_only_touches_known_scalar_settings(monkeypatch):
+    saved = []
+    monkeypatch.setattr(coding, "load_settings", lambda run_id: [
+        {"name": "train.epochs_student", "value": "8"}, {"name": "distill.temperature", "value": "20"}])
+    monkeypatch.setattr(coding, "record_settings", lambda run_id, items: saved.extend(items))
+    out = coding.apply_setting_changes(1, {
+        "train.epochs_student": 12,        # changed: applied
+        "distill.temperature": "20",       # same value: ignored
+        "not.a.setting": 3,                # unknown name: ignored
+        "train.epochs_student_x": [1],     # unknown + not scalar: ignored
+    }, "more epochs")
+    assert out == ["train.epochs_student = 12"]
+    assert saved[0]["source"] == "researcher" and "more epochs" in saved[0]["reason"]
+    assert coding.apply_setting_changes(1, {}) == [] and coding.apply_setting_changes(1, None) == []

@@ -130,7 +130,8 @@ def n_wait_plan(s: State) -> State:
         bus.emit(run_id, "system", "run_rejected", "The researcher rejected the plan; the run stops here", "")
         return {"outcome": "rejected"}
     if action == "edit":
-        changes = coding.apply_researcher_edit(run_id, resp.get("instruction", ""))
+        structured = coding.apply_setting_changes(run_id, resp.get("changes") or {}, resp.get("instruction", ""))
+        changes = structured + (coding.apply_researcher_edit(run_id, resp["instruction"]) if resp.get("instruction", "").strip() else [])
         bus.emit(run_id, "system", "plan_edited",
                  "Plan edited: " + (", ".join(changes) if changes else "instruction passed to the agents"),
                  resp.get("instruction", ""), {"changes": changes})

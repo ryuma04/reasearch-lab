@@ -469,19 +469,47 @@ def write_brief(run_id: int, workspace_id: int, papers_info: list[dict], sources
     return brief
 
 
+def _web_url(u: str | None) -> str | None:
+    """Only http(s) URLs become links; local upload paths and anything else stay unlinked."""
+    return u if isinstance(u, str) and re.match(r"^https?://[^\s]+$", u) else None
+
+
 def map_for_brief(brief: dict) -> tuple[list, list]:
+    """Research Map nodes/edges from the Research Brief. Every edge is backed by evidence the agents hold:
+    claims were extracted from the paper; a dataset was named by the researcher or the paper recipe; a repository
+    is linked by what we know about it (provided by the researcher, official, or only found by a title search);
+    a related paper is one that Semantic Scholar lists as CITING this paper. Nothing is connected without a reason."""
     nodes, edges = [], []
-    for p in brief["papers"]:
+    papers = brief["papers"]
+    for p in papers:
         pid = f"paper:{p['paper_id']}"
-        nodes.append(node(pid, "paper", p["title"][:60]))
+        arxiv = (p.get("arxiv_id") or "").split("v")[0]
+        nodes.append(node(pid, "paper", p["title"][:60], url=f"https://arxiv.org/abs/{arxiv}" if arxiv else None,
+                          source_type="paper", meta={"arxiv": p.get("arxiv_id") or None}))
         for c in p["claims"]:
             cid = f"claim:{c['id']}"
             nodes.append(node(cid, "claim", f"{c['description'][:40]}: {c['value']:g}", "waiting", page=c.get("page")))
             edges.append(edge(pid, cid, "claims"))
     for i, d in enumerate(brief["sources"]["datasets"]):
-        nodes.append(node(f"dataset:{i}", "source", d["name"][:40]))
-        for p in brief["papers"]:
+        nodes.append(node(f"dataset:{i}", "source", d["name"][:40], url=_web_url(d.get("url")), source_type="dataset",
+                          meta={k: d.get(k) for k in ("licence", "size", "official", "user_provided") if d.get(k) is not None}))
+        for p in papers:
             edges.append(edge(f"dataset:{i}", f"paper:{p['paper_id']}", "used by"))
     for i, r in enumerate(brief["sources"]["repositories"]):
-        nodes.append(node(f"repo:{i}", "source", (r.get("name") or r["url"])[:40]))
+        nodes.append(node(f"repo:{i}", "source", (r.get("name") or r["url"])[:40], url=_web_url(r.get("url")), source_type="repository",
+                          meta={k: r.get(k) for k in ("licence", "stars", "language", "official", "user_provided", "description") if r.get(k) is not None}))
+        if r.get("user_provided"):
+            why = "code provided by you for"
+        elif r.get("official"):
+            why = "official code of"
+        else:
+            why = "found by title search, not confirmed:"
+        for p in papers[:1]:  # one reference repository belongs to the first paper unless we know better
+            edges.append(edge(f"repo:{i}", f"paper:{p['paper_id']}", why))
+    for i, rp in enumerate(brief["sources"].get("related_papers") or []):
+        arxiv = rp.get("arxiv")
+        label = f"{rp['title'][:50]}" + (f" ({rp['year']})" if rp.get("year") else "")
+        nodes.append(node(f"related:{i}", "related", label, url=f"https://arxiv.org/abs/{arxiv}" if arxiv else None, source_type="paper",
+                          meta={"year": rp.get("year"), "citations": rp.get("citations"), "arxiv": arxiv}))
+        edges.append(edge(f"related:{i}", f"paper:{papers[0]['paper_id']}", "cites"))
     return nodes, edges
