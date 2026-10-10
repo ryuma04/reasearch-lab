@@ -17,6 +17,8 @@ type Config struct {
 	PublicAPIURL    string
 	FrontendURL     string
 	DevLoginEnabled bool
+	// EmailLoginEnabled allows email + password accounts next to GitHub login.
+	EmailLoginEnabled bool
 
 	DatabaseURL string
 	RedisURL    string
@@ -58,11 +60,12 @@ func Load() (*Config, error) {
 	envDir := loadDotEnv()
 
 	c := &Config{
-		Env:             get("APP_ENV", "development"),
-		Addr:            get("API_ADDR", ":8080"),
-		PublicAPIURL:    strings.TrimRight(get("PUBLIC_API_URL", "http://localhost:8080"), "/"),
-		FrontendURL:     strings.TrimRight(get("FRONTEND_URL", "http://localhost:3000"), "/"),
-		DevLoginEnabled: getBool("DEV_LOGIN_ENABLED", false),
+		Env:               get("APP_ENV", "development"),
+		Addr:              get("API_ADDR", ":8080"),
+		PublicAPIURL:      strings.TrimRight(get("PUBLIC_API_URL", "http://localhost:8080"), "/"),
+		FrontendURL:       strings.TrimRight(get("FRONTEND_URL", "http://localhost:3000"), "/"),
+		DevLoginEnabled:   getBool("DEV_LOGIN_ENABLED", false),
+		EmailLoginEnabled: getBool("EMAIL_LOGIN_ENABLED", true),
 
 		DatabaseURL: get("DATABASE_URL", "postgres://lab:lab@localhost:5433/lab?sslmode=disable"),
 		RedisURL:    get("REDIS_URL", "redis://localhost:6379/0"),
@@ -127,6 +130,10 @@ func Load() (*Config, error) {
 	}
 	if c.SandboxMode != "docker" && c.SandboxMode != "local" {
 		return nil, fmt.Errorf("SANDBOX_MODE must be docker or local")
+	}
+	// local runs AI-written code on this machine with no isolation (audit SEC-02).
+	if c.SandboxMode == "local" && c.Env != "development" {
+		return nil, fmt.Errorf("SANDBOX_MODE=local (no isolation) is only allowed with APP_ENV=development")
 	}
 	return c, nil
 }

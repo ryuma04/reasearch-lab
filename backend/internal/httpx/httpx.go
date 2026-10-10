@@ -88,12 +88,36 @@ func CORS(allowedOrigins ...string) func(http.Handler) http.Handler {
 				h := w.Header()
 				h.Set("Access-Control-Allow-Origin", origin)
 				h.Set("Access-Control-Allow-Credentials", "true")
-				h.Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Last-Event-ID")
+				h.Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Last-Event-ID, X-Requested-With, X-CSRF-Token")
 				h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 				h.Add("Vary", "Origin")
 			}
 			if r.Method == http.MethodOptions {
 				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// CSRF rejects state-changing browser requests that rely on the session cookie but lack the
+// X-Requested-With header. A cross-site form cannot set that header, and a cross-site fetch
+// that sets it fails the CORS preflight unless the origin is allowed. Requests authenticated
+// with a Bearer token or X-Internal-Token (curl, agent worker, n8n) are not cookie-based.
+func CSRF(cookieName string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet, http.MethodHead, http.MethodOptions:
+				next.ServeHTTP(w, r)
+				return
+			}
+			if _, err := r.Cookie(cookieName); err == nil &&
+				!strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") &&
+				r.Header.Get("X-Internal-Token") == "" &&
+				r.Header.Get("X-Requested-With") == "" {
+				JSON(w, http.StatusForbidden, Errorf(http.StatusForbidden, "missing X-Requested-With header"))
 				return
 			}
 			next.ServeHTTP(w, r)

@@ -91,7 +91,7 @@ type Intent struct {
 	NeedsConfirm bool   `json:"needs_confirm"`
 }
 
-// Intent asks the Team Manager to understand a researcher's command (typed or transcribed voice).
+// Intent asks the agent service to understand a researcher's command (typed or transcribed voice).
 func (c *Client) Intent(ctx context.Context, text string, runs []RunContext) (*Intent, error) {
 	var out Intent
 	err := c.do(ctx, http.MethodPost, "/intent", map[string]any{"text": text, "runs": runs}, &out)

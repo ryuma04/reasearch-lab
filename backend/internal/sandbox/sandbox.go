@@ -324,27 +324,53 @@ func shellPath() string {
 	return "sh"
 }
 
-// codeVersion commits the project (excluding data, logs, deps) into a local git repo and
-// returns the commit hash. Falls back to a content hash if git is unavailable.
+// snapshotIgnore lists what is never part of a code version.
+const snapshotIgnore = "data/\nlogs/\n.pydeps/\n.cache/\nresults/\n__pycache__/\n*.pt\n*.pth\n*.ckpt\n.pytest_cache/\n.git/\n"
+
+// GitDir is where a run's code-version repository lives: next to the project folder, never
+// inside it. The project folder is mounted read-write into the sandbox, so a repository inside
+// it would let sandboxed code plant hooks or config (core.fsmonitor, hooks/*) that the host's
+// git would then execute (audit SEC-01).
+func GitDir(project string) string { return filepath.Join(filepath.Dir(project), "meta.git") }
+
+// gitArgs are the hardened options for every host-side git call on a sandbox project.
+func gitArgs(gitDir, project string) []string {
+	return []string{
+		"--git-dir=" + gitDir, "--work-tree=" + project,
+		"-c", "user.name=Lab Sandbox", "-c", "user.email=lab@localhost",
+		"-c", "commit.gpgsign=false", "-c", "core.autocrlf=false", "-c", "safe.directory=*",
+		"-c", "core.hooksPath=" + filepath.ToSlash(filepath.Join(gitDir, "no-hooks")),
+		"-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false",
+		"-c", "core.excludesFile=" + filepath.ToSlash(filepath.Join(gitDir, "info", "exclude")),
+	}
+}
+
+// codeVersion commits the project (excluding data, logs, deps) into a repository kept outside
+// the sandbox mount and returns the commit hash. Falls back to a content hash if git is unavailable.
 func (s *Service) codeVersion(project string) string {
 	s.gitMu.Lock()
 	defer s.gitMu.Unlock()
-	ignore := "data/\nlogs/\n.pydeps/\n.cache/\nresults/\n__pycache__/\n*.pt\n*.pth\n*.ckpt\n.pytest_cache/\n"
-	_ = os.WriteFile(filepath.Join(project, ".gitignore"), []byte(ignore), 0o644)
+	// The pushed repository gets a .gitignore too; the snapshot itself relies only on info/exclude,
+	// which sandboxed code cannot edit.
+	_ = os.WriteFile(filepath.Join(project, ".gitignore"), []byte(snapshotIgnore), 0o644)
 
+	gitDir := GitDir(project)
 	git := func(args ...string) (string, error) {
-		c := exec.Command("git", append([]string{"-c", "user.name=Lab Sandbox", "-c", "user.email=lab@localhost",
-			"-c", "commit.gpgsign=false", "-c", "core.autocrlf=false", "-c", "safe.directory=*"}, args...)...)
-		c.Dir = project
+		c := exec.Command("git", append(gitArgs(gitDir, project), args...)...)
+		c.Dir = filepath.Dir(project)
+		c.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0")
 		out, err := c.CombinedOutput()
 		return strings.TrimSpace(string(out)), err
 	}
 	if _, err := exec.LookPath("git"); err == nil {
-		if _, err := os.Stat(filepath.Join(project, ".git")); err != nil {
+		if _, err := os.Stat(filepath.Join(gitDir, "HEAD")); err != nil {
 			if _, err := git("init", "-q"); err != nil {
 				return contentHash(project)
 			}
 		}
+		_ = os.MkdirAll(filepath.Join(gitDir, "no-hooks"), 0o755)
+		_ = os.MkdirAll(filepath.Join(gitDir, "info"), 0o755)
+		_ = os.WriteFile(filepath.Join(gitDir, "info", "exclude"), []byte(snapshotIgnore), 0o644)
 		_, _ = git("add", "-A")
 		_, _ = git("commit", "-q", "--allow-empty", "-m", "sandbox snapshot")
 		if sha, err := git("rev-parse", "--short=12", "HEAD"); err == nil {

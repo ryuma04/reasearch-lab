@@ -204,7 +204,12 @@ func (s *Service) Get(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"workspace": ws, "uploads": uploads})
+	runs, err := s.store.RunsForWorkspace(r.Context(), id)
+	if err != nil {
+		return err
+	}
+	// runs: main runs, newest first (what-if/gap child runs are listed under GET /runs/{id}).
+	httpx.JSON(w, http.StatusOK, map[string]any{"workspace": ws, "uploads": uploads, "runs": runs, "role": ws.Role})
 	return nil
 }
 

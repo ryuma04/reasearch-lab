@@ -216,3 +216,10 @@ func splitCols(cols string) []string {
 	}
 	return out
 }
+
+// ReopenCheckpoint puts a just-resolved checkpoint back to pending (used when the resume job
+// could not be queued, so the researcher can answer again).
+func (s *Store) ReopenCheckpoint(ctx context.Context, id int64) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE checkpoints SET status='pending', response='{}', resolved_at=NULL WHERE id=$1`, id)
+	return err
+}

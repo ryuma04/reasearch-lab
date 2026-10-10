@@ -24,10 +24,35 @@ import (
 	"github.com/ryuma04/tapu-sena/backend/internal/workspace"
 )
 
-// Agents are the fixed agents of the pipeline (agents/lab/steps.py).
-var Agents = map[string]bool{
-	"research.paper_reader": true, "research.source_finder": true, "coding.writer": true, "coding.reviewer": true,
-	"testing.designer": true, "testing.runner": true, "gap_detective": true, "whatif": true, "observer": true,
+// AgentInfo describes one fixed agent of the pipeline (mirrors agents/lab/steps.py AGENTS).
+type AgentInfo struct {
+	ID          string `json:"id"`    // the agent string used in events, e.g. coding.writer
+	Group       string `json:"group"` // card on the Live Agent Board, e.g. coding
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// AgentList is the fixed pipeline, in order (GET /agents).
+var AgentList = []AgentInfo{
+	{"research.paper_reader", "research", "Paper Reader", "Reads the paper (arXiv LaTeX source, then PDF) and builds the Claims List with page numbers."},
+	{"research.source_finder", "research", "Source Finder", "Finds and checks the code, datasets and related papers."},
+	{"coding.writer", "coding", "Code Writer", "Writes the project; every script writes results/metrics.json."},
+	{"coding.reviewer", "coding", "Code Reviewer and Debugger", "Reviews code against the brief and fixes errors, Lab Memory first."},
+	{"testing.designer", "testing", "Test Designer", "Writes correctness tests and claim tests."},
+	{"testing.runner", "testing", "Test Runner", "Runs the tests in the sandbox and fills the Claim Scorecard."},
+	{"gap_detective", "gap_detective", "Gap Detective", "Tests why a result differs from the paper with one-change experiments."},
+	{"whatif", "whatif", "What-If Planner", "Turns a what-if question into branches with successive halving."},
+	{"observer", "observer", "Observer", "Draws the live Research Map from every event."},
+}
+
+// KnownAgent accepts a full agent id (coding.writer) or a board card group (coding).
+func KnownAgent(agent string) bool {
+	for _, a := range AgentList {
+		if a.ID == agent || a.Group == agent {
+			return true
+		}
+	}
+	return false
 }
 
 type Service struct {
@@ -111,7 +136,7 @@ func (s *Service) Start(w http.ResponseWriter, r *http.Request) error {
 	}
 	s.event(ctx, run.ID, "system", "run_queued",
 		fmt.Sprintf("Run #%d queued with the %s budget", run.ID, budget),
-		"The researcher started a run; the Team Manager will plan the work", nil)
+		"The researcher started a run; the Research Agent reads the paper first", nil)
 	httpx.JSON(w, http.StatusCreated, run)
 	return nil
 }
@@ -224,9 +249,12 @@ func (s *Service) stream(w http.ResponseWriter, r *http.Request, runID int64) er
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, "retry: 3000\n\n")
 
+	// Events are sent as unnamed SSE messages: an EventSource only delivers named events to
+	// listeners registered for that exact name, so naming them by type silently dropped every
+	// type the browser did not know in advance (audit INT-07). The type is inside the JSON.
 	send := func(e store.Event) {
 		data, _ := json.Marshal(e)
-		fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", e.ID, e.Type, data)
+		fmt.Fprintf(w, "id: %d\ndata: %s\n\n", e.ID, data)
 	}
 	last := after
 	for {
@@ -258,7 +286,9 @@ func (s *Service) stream(w http.ResponseWriter, r *http.Request, runID int64) er
 			last = e.ID
 			flusher.Flush()
 		case <-ping.C:
-			fmt.Fprintf(w, ": ping\n\n")
+			// A real (named) heartbeat event, so the client can tell a quiet run from a dead connection.
+			fmt.Fprintf(w, "event: heartbeat\ndata: {\"type\":\"heartbeat\",\"run_id\":%d,\"time\":%q}\n\n",
+				runID, time.Now().UTC().Format(time.RFC3339))
 			flusher.Flush()
 		}
 	}
@@ -321,10 +351,13 @@ func (s *Service) Resolve(ctx context.Context, runID int64, name string, body Ch
 	if err != nil {
 		return nil, err
 	}
-	if err := s.store.SetRunStatus(ctx, runID, "running", "", ""); err != nil {
-		return nil, err
-	}
+	// The worker only continues when it receives the resume job. If that cannot be queued, put the
+	// checkpoint back to pending so the researcher can answer again (audit REL-03).
 	if err := s.bus.Enqueue(ctx, map[string]any{"type": "resume", "run_id": runID, "checkpoint": name, "response": resp}); err != nil {
+		_ = s.store.ReopenCheckpoint(context.WithoutCancel(ctx), cp.ID)
+		return nil, httpx.Errorf(http.StatusServiceUnavailable, "could not reach the agent worker; try again")
+	}
+	if err := s.store.SetRunStatus(ctx, runID, "running", "", ""); err != nil {
 		return nil, err
 	}
 	msg := fmt.Sprintf("Researcher %s the %s checkpoint", status, name)
@@ -354,6 +387,9 @@ func (s *Service) AgentAction(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	res, err := s.Act(r.Context(), run, chiParam(r, "agent"), body.Action, body.Text, "web")
+	if err == nil {
+		res["accepted"] = true
+	}
 	if err != nil {
 		return err
 	}
@@ -365,7 +401,7 @@ func (s *Service) Act(ctx context.Context, run *store.Run, agent, action, text, 
 	if agent == "" {
 		agent = "run"
 	}
-	if agent != "run" && !Agents[agent] {
+	if agent != "run" && !KnownAgent(agent) {
 		return nil, httpx.Errorf(http.StatusNotFound, "unknown agent "+agent)
 	}
 	finished := run.Status == "completed" || run.Status == "failed" || run.Status == "stopped" || run.Status == "rejected"

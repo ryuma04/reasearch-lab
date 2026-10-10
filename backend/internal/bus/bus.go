@@ -25,6 +25,8 @@ import (
 const (
 	JobsKey   = "lab:jobs"
 	EventsKey = "lab:events"
+	// EventsProcessingKey holds events being saved (at-least-once ingest, see RunIngest).
+	EventsProcessingKey = "lab:events:processing"
 )
 
 func ControlKey(runID int64) string      { return fmt.Sprintf("lab:run:%d:control", runID) }
@@ -99,9 +101,18 @@ func (b *Bus) Emit(ctx context.Context, e store.Event) {
 }
 
 // RunIngest consumes worker events from Redis until ctx is cancelled.
+//
+// Delivery is at-least-once: each event is atomically moved to EventsProcessingKey and removed
+// only after it is saved, so a database error or an API crash never loses an event (audit
+// REL-01). Events left in the processing list by a previous process are put back on start.
 func (b *Bus) RunIngest(ctx context.Context) {
+	for {
+		if err := b.Redis.LMove(ctx, EventsProcessingKey, EventsKey, "RIGHT", "RIGHT").Err(); err != nil {
+			break // redis.Nil: nothing left to recover
+		}
+	}
 	for ctx.Err() == nil {
-		res, err := b.Redis.BRPop(ctx, 5*time.Second, EventsKey).Result()
+		raw, err := b.Redis.BLMove(ctx, EventsKey, EventsProcessingKey, "RIGHT", "LEFT", 5*time.Second).Result()
 		if errors.Is(err, redis.Nil) || ctx.Err() != nil {
 			continue
 		}
@@ -111,16 +122,27 @@ func (b *Bus) RunIngest(ctx context.Context) {
 			continue
 		}
 		var e store.Event
-		if err := json.Unmarshal([]byte(res[1]), &e); err != nil || e.RunID == 0 {
-			slog.Warn("bad event from worker", "err", err, "raw", truncate(res[1], 200))
+		if err := json.Unmarshal([]byte(raw), &e); err != nil || e.RunID == 0 {
+			slog.Warn("bad event from worker", "err", err, "raw", truncate(raw, 200))
+			b.ack(ctx, raw)
 			continue
 		}
 		e.ID = 0
 		if err := b.store.InsertEvent(ctx, &e); err != nil {
-			slog.Error("save event", "err", err, "run_id", e.RunID)
+			// Keep it in the processing list; move it back so it is retried after a pause.
+			slog.Error("save event; will retry", "err", err, "run_id", e.RunID)
+			_ = b.Redis.LMove(ctx, EventsProcessingKey, EventsKey, "LEFT", "RIGHT").Err()
+			time.Sleep(2 * time.Second)
 			continue
 		}
+		b.ack(ctx, raw)
 		b.dispatch(ctx, e)
+	}
+}
+
+func (b *Bus) ack(ctx context.Context, raw string) {
+	if err := b.Redis.LRem(context.WithoutCancel(ctx), EventsProcessingKey, 1, raw).Err(); err != nil {
+		slog.Warn("ack event", "err", err)
 	}
 }
 

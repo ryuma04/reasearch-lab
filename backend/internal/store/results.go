@@ -104,7 +104,7 @@ func (s *Store) MemoryTextSearch(ctx context.Context, q, kind string, limit int)
 func (s *Store) CreateWhatIfQuestion(ctx context.Context, runID int64, questionID, question string) error {
 	_, err := s.Pool.Exec(ctx, `
 		INSERT INTO whatif_branches (run_id, question_id, question, label, status, reason)
-		VALUES ($1, $2, $3, 'planning', 'pending', 'Team Manager is turning the question into branches')`,
+		VALUES ($1, $2, $3, 'planning', 'pending', 'The What-If Planner is turning the question into branches')`,
 		runID, questionID, question)
 	return err
 }

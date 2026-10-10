@@ -1,5 +1,5 @@
 // Package voice handles voice commands from the mobile web app: Groq Whisper turns speech into
-// text, then the Team Manager (agent service /intent) understands it. The app shows the intent
+// text, then the agent service (/intent) understands it. The app shows the intent
 // and asks for a one-tap confirmation before calling the normal API for anything that changes work.
 package voice
 

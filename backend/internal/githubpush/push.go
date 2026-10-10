@@ -92,6 +92,12 @@ func (s *Service) Start(ctx context.Context, run *store.Run, userID int64, repo,
 	if repo == "" || !strings.Contains(repo, "/") {
 		return 0, httpx.Errorf(http.StatusPreconditionFailed, "choose or create a repository first (PUT /github/default-repo)")
 	}
+	// A push whose n8n callback never arrived must not block every later push (audit REL-02).
+	if tag, err := s.store.Pool.Exec(ctx, `UPDATE pushes SET status='failed', finished_at=now(),
+		error='timed out: the push workflow never reported back' WHERE run_id=$1 AND status IN ('pending','pushing')
+		AND created_at < now() - interval '20 minutes'`, run.ID); err == nil && tag.RowsAffected() > 0 {
+		s.event(ctx, run.ID, "push_failed", "A previous push timed out and was marked failed", "", nil)
+	}
 	var active bool
 	_ = s.store.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pushes WHERE run_id=$1 AND status IN ('pending','pushing'))`, run.ID).Scan(&active)
 	if active {

@@ -73,6 +73,7 @@ func run() error {
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Recoverer)
 	r.Use(httpx.CORS(cfg.FrontendURL))
 	r.Use(authSvc.Middleware)
+	r.Use(httpx.CSRF(auth.SessionCookie))
 	h := httpx.Handler
 
 	r.Get("/healthz", health(cfg, st, b, agents))
@@ -85,6 +86,8 @@ func run() error {
 	r.Get("/auth/github/callback", h(authSvc.Callback))
 	r.Post("/auth/dev-login", h(authSvc.DevLogin))
 	r.Post("/auth/logout", h(authSvc.Logout))
+	r.Post("/auth/register", h(authSvc.Register))
+	r.Post("/auth/login", h(authSvc.PasswordLogin))
 
 	// Public read-only live view (QR code link)
 	runSvc.ShareRoutes(r)
@@ -135,7 +138,9 @@ func run() error {
 		r.Get("/metrics/{id}/proof", h(runSvc.MetricProof))
 		r.Get("/papers/{id}/pdf", h(runSvc.PaperPDF))
 
-		r.Get("/agents", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, http.StatusOK, runs.Agents) })
+		r.Get("/runs/{id}/tests", h(runSvc.Tests))
+		r.Get("/runs/{id}/memory", h(runSvc.RunMemory))
+		r.Get("/agents", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, http.StatusOK, runs.AgentList) })
 		r.Get("/memory/search", h(runSvc.MemorySearch))
 
 		r.Post("/voice/command", h(voiceSvc.Command))
