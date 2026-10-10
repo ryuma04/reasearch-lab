@@ -1,9 +1,10 @@
 import Link from "next/link";
 import {
-  ArrowRight, Brain, ChartBar, CheckCircle, Detective, FileMagnifyingGlass, GitBranch, GithubLogo, Lightning,
+  ArrowRight, Brain, ChartBar, CheckCircle, Detective, FileMagnifyingGlass, GitBranch, Lightning,
   MapTrifold, Microphone, Play, SealCheck, ShieldCheck, TreeStructure, UsersThree, Cpu, Scales,
 } from "@phosphor-icons/react/ssr";
 import { Logo } from "@/components/shell/logo";
+import { LandingRedirect } from "@/components/shell/landing-redirect";
 import { Button } from "@/components/ui/button";
 import { ArtTile, Badge, Highlighter, Kicker, type Tone } from "@/components/ui/primitives";
 
@@ -30,6 +31,7 @@ const MARQUEE = ["Distillation · Hinton 2015", "Lottery Ticket Hypothesis", "KA
 export default function LandingPage() {
   return (
     <div className="bg-dots">
+      <LandingRedirect />
       <header className="sticky top-0 z-40 border-b border-ink/5 bg-canvas/85 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
           <Logo />
@@ -40,7 +42,7 @@ export default function LandingPage() {
           </nav>
           <div className="flex items-center gap-2">
             <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex"><Link href="/login">Log in</Link></Button>
-            <Button asChild size="sm"><Link href="/login?return_to=%2Fworkspaces%2Fnew">Get started <ArrowRight size={16} weight="bold" /></Link></Button>
+            <Button asChild size="sm"><Link href="/login">Get started <ArrowRight size={16} weight="bold" /></Link></Button>
           </div>
         </div>
       </header>
@@ -54,7 +56,7 @@ export default function LandingPage() {
               Give your papers a re-run. Meet your new <Highlighter>AI research team</Highlighter>.
             </h1>
             <div className="mt-8 flex flex-wrap gap-3">
-              <Button asChild size="lg" variant="purple"><Link href="/login?return_to=%2Fworkspaces%2Fnew"><GithubLogo size={20} weight="bold" /> Continue with GitHub</Link></Button>
+              <Button asChild size="lg" variant="purple"><Link href="/login">Sign in or create account <ArrowRight size={20} weight="bold" /></Link></Button>
               <Button asChild size="lg" variant="outline"><a href="#how"><Play size={20} weight="bold" /> See how it works</a></Button>
             </div>
             <ul className="mt-8 grid gap-3 text-sm font-semibold text-ink-soft sm:grid-cols-3">
@@ -154,7 +156,7 @@ export default function LandingPage() {
             <Badge tone="sun" solid>You, the researcher</Badge>
             <h3 className="mt-4 text-2xl font-semibold">Decide, don&apos;t babysit.</h3>
             <ul className="mt-4 space-y-2.5 text-sm text-ink-soft">
-              {["Upload a paper — everything else is optional", "Approve the plan at Checkpoint 1", "Ask what-if questions from your phone", "Approve the GitHub push at Checkpoint 2"].map((x) => (
+              {["Upload a paper — everything else is optional", "Approve the plan at Checkpoint 1", "Ask what-if questions from your phone", "Approve the Hugging Face publish at Checkpoint 2"].map((x) => (
                 <li key={x} className="flex gap-2"><CheckCircle size={18} weight="fill" className="shrink-0 text-success" />{x}</li>
               ))}
             </ul>
@@ -208,8 +210,8 @@ export default function LandingPage() {
         <section className="mx-auto max-w-6xl px-4 pb-24 sm:px-6">
           <div className="bg-speed relative overflow-hidden rounded-[32px] border-2 border-ink bg-sun p-8 text-center shadow-pop-lg sm:p-14">
             <h2 className="text-3xl font-semibold sm:text-[2.5rem]">Reproduce your first paper today.</h2>
-            <p className="mx-auto mt-3 max-w-lg text-ink-soft">Log in with GitHub — that also connects the repository where your results will land.</p>
-            <Button asChild size="lg" className="mt-7"><Link href="/login?return_to=%2Fworkspaces%2Fnew"><GithubLogo size={20} weight="bold" /> Continue with GitHub</Link></Button>
+            <p className="mx-auto mt-3 max-w-lg text-ink-soft">Create an account, upload a paper and watch the agent team work, with proof behind every number.</p>
+            <Button asChild size="lg" className="mt-7"><Link href="/login">Sign in or create account <ArrowRight size={20} weight="bold" /></Link></Button>
           </div>
         </section>
       </main>

@@ -17,6 +17,16 @@ type Workspace struct {
 	Note          string    `json:"note"`
 	CreatedAt     time.Time `json:"created_at"`
 	Role          string    `json:"role,omitempty"` // role of the requesting user
+	LatestRun     *RunBrief `json:"latest_run,omitempty"`
+}
+
+// RunBrief is the newest main run of a workspace, shown on the dashboard.
+type RunBrief struct {
+	ID          int64  `json:"id"`
+	WorkspaceID int64  `json:"workspace_id"`
+	Kind        string `json:"kind"`
+	Status      string `json:"status"`
+	Stage       string `json:"stage"`
 }
 
 const wsCols = `w.id, w.owner_id, w.title, w.compute_budget, w.mode, w.note, w.created_at`
@@ -68,8 +78,9 @@ func (s *Store) WorkspaceForUser(ctx context.Context, id, userID int64) (*Worksp
 
 func (s *Store) WorkspacesForUser(ctx context.Context, userID int64) ([]*Workspace, error) {
 	rows, err := s.Pool.Query(ctx, `
-		SELECT `+wsCols+`, m.role FROM workspaces w
+		SELECT `+wsCols+`, m.role, lr.id, lr.status, lr.stage FROM workspaces w
 		JOIN workspace_members m ON m.workspace_id = w.id AND m.user_id = $1
+		LEFT JOIN LATERAL (SELECT r.id, r.status, r.stage FROM runs r WHERE r.workspace_id = w.id AND r.kind = 'main' ORDER BY r.id DESC LIMIT 1) lr ON true
 		ORDER BY w.created_at DESC`, userID)
 	if err != nil {
 		return nil, err
@@ -78,11 +89,16 @@ func (s *Store) WorkspacesForUser(ctx context.Context, userID int64) ([]*Workspa
 	out := []*Workspace{}
 	for rows.Next() {
 		var role string
-		ws, err := scanWS(rows, &role)
+		var runID *int64
+		var runStatus, runStage *string
+		ws, err := scanWS(rows, &role, &runID, &runStatus, &runStage)
 		if err != nil {
 			return nil, err
 		}
 		ws.Role = role
+		if runID != nil && runStatus != nil && runStage != nil {
+			ws.LatestRun = &RunBrief{ID: *runID, WorkspaceID: ws.ID, Kind: "main", Status: *runStatus, Stage: *runStage}
+		}
 		out = append(out, ws)
 	}
 	return out, rows.Err()

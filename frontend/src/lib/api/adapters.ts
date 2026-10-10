@@ -52,6 +52,7 @@ export function toWorkspace(raw: unknown): T.WorkspaceSummary {
     note: s(w.note),
     created_at: String(w.created_at ?? ""),
     role: (s(w.role) ?? undefined) as T.WorkspaceRole | undefined,
+    latest_run: isObj(w.latest_run) ? toRun(w.latest_run) : null,
   };
 }
 
