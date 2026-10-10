@@ -305,3 +305,33 @@ func TestPreviewWithoutTokenOrVerifiedRun(t *testing.T) {
 		t.Fatalf("publish with blockers: %d", rec.Code)
 	}
 }
+
+func TestQueuedPublicationThatNoWorkerStartedFailsAndCanBeRetried(t *testing.T) {
+	f := newFixture(t, "hf_fake")
+	ctx := context.Background()
+	body := map[string]any{"repo": "digits", "private": true, "confirm": true}
+	rec, pub := f.do("POST", "/huggingface", f.owner, body)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("publish: %d", rec.Code)
+	}
+	// A fresh one is still waiting.
+	_, _ = f.do("GET", "/huggingface", f.owner, nil)
+	var status string
+	_ = f.st.Pool.QueryRow(ctx, `SELECT status FROM hf_publications WHERE id=$1`, int64(pub["id"].(float64))).Scan(&status)
+	if status != "queued" {
+		t.Fatalf("fresh publication changed to %s", status)
+	}
+	// No worker took it for longer than the limit.
+	_, _ = f.st.Pool.Exec(ctx, `UPDATE hf_publications SET created_at = now() - interval '4 minutes' WHERE id=$1`, int64(pub["id"].(float64)))
+	rec, _ = f.do("GET", "/huggingface", f.owner, nil)
+	var list []Publication
+	_ = json.Unmarshal(rec.Body.Bytes(), &list)
+	if list[0].Status != "failed" || !strings.Contains(list[0].Error, "never started") || list[0].RepoURL != "" {
+		t.Fatalf("stale publication: %+v", list[0])
+	}
+	// The researcher can publish again straight away.
+	if rec, _ := f.do("POST", "/huggingface", f.owner, body); rec.Code != http.StatusAccepted {
+		t.Fatalf("retry after a stale publication: %d %s", rec.Code, rec.Body.String())
+	}
+	_ = f.b.Redis.Del(ctx, bus.JobsKey)
+}

@@ -111,16 +111,40 @@ def verify_files(root: Path, files: list[dict]) -> list[tuple[str, Path, int]]:
     return out
 
 
-def publish(pub_id: int, api=None, sleep=time.sleep) -> dict:
-    """Run one publication. Returns {"status": ..., ...}; the row holds the details for the UI."""
-    from huggingface_hub import CommitOperationAdd
+def _load_queued(pub_id: int, sleep=time.sleep) -> dict | None:
+    """The queued row. Read a few times: the job can arrive a moment before the row is visible."""
+    for attempt in range(3):
+        row = db.q1("SELECT * FROM hf_publications WHERE id=%s", (pub_id,))
+        if row:
+            return row if row["status"] == "queued" else None
+        sleep(1.0 * (attempt + 1))
+    log.warning("hugging face publication %s not found; nothing to do", pub_id)
+    return None
 
-    row = db.q1("SELECT * FROM hf_publications WHERE id=%s", (pub_id,))
-    if not row or row["status"] != "queued":
+
+def requeue_stuck(max_age_seconds: int = 20) -> int:
+    """On worker start: queue again any publication still waiting (its job was lost in a restart)."""
+    rows = db.q("""SELECT id, run_id FROM hf_publications WHERE status='queued'
+                   AND created_at < now() - make_interval(secs => %s)""", (max_age_seconds,))
+    for r in rows:
+        bus.r.lpush(bus.JOBS_KEY, __import__("json").dumps({"type": "hf_publish", "run_id": r["run_id"], "publication_id": r["id"]}))
+    if rows:
+        log.warning("re-queued %d Hugging Face publication(s) that were waiting", len(rows))
+    return len(rows)
+
+
+def publish(pub_id: int, api=None, sleep=time.sleep) -> dict:
+    """Run one publication. Returns {"status": ..., ...}; the row holds the details for the UI.
+    Every failure, including setup problems, is written to the row: it never stays 'queued'."""
+    log.info("hugging face publication %s: starting", pub_id)
+    row = _load_queued(pub_id, sleep)
+    if not row:
         return {"status": "skipped"}
     run_id = row["run_id"]
-    _update(pub_id, status="uploading", stage="checking files")
     try:
+        _update(pub_id, status="uploading", stage="checking files")
+        from huggingface_hub import CommitOperationAdd
+
         if not settings.hf_token:
             raise PublishError("HF_TOKEN is not set for the agent worker; add it to .env and restart.")
         api = api or _api()

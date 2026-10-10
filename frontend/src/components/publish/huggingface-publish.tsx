@@ -180,12 +180,17 @@ function PublicationStatus({ p }: { p: HfPublication }) {
         <Badge tone={p.private ? "faint" : "sky"}>{p.private ? "Private" : "Public"}</Badge>
         {p.status === "succeeded" ? <Badge tone="mint" solid><CheckCircle size={12} weight="bold" /> Published</Badge>
           : p.status === "failed" ? <Badge tone="coral" solid><WarningCircle size={12} weight="bold" /> Failed</Badge>
+          : p.status === "queued" ? <Badge tone="faint"><CircleNotch size={12} className="animate-spin" /> Waiting to start</Badge>
           : <Badge tone="sky" solid><CircleNotch size={12} className="animate-spin" /> Uploading</Badge>}
       </div>
       {live(p) && (
         <>
           <Progress value={pct} label="Upload progress" />
-          <p className="text-sm text-muted">{p.stage}. {p.files_done} of {p.files_total} files, {formatBytes(p.bytes_done)} of {formatBytes(p.bytes_total)}</p>
+          <p className="text-sm text-muted">
+            {p.status === "queued"
+              ? "Waiting for the agents worker to start the upload. If nothing happens in 3 minutes it stops with a message."
+              : `${p.stage[0]?.toUpperCase() ?? ""}${p.stage.slice(1)}. ${p.files_done} of ${p.files_total} files, ${formatBytes(p.bytes_done)} of ${formatBytes(p.bytes_total)}`}
+          </p>
         </>
       )}
       {p.status === "failed" && <p role="alert" className="text-sm text-danger">{p.error || "The upload failed."}</p>}

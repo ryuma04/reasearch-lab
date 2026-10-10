@@ -274,6 +274,9 @@ func (s *Service) Publish(w http.ResponseWriter, r *http.Request) error {
 	if len(p.Blockers) > 0 {
 		return httpx.Errorf(http.StatusConflict, "cannot publish yet: "+strings.Join(p.Blockers, "; "))
 	}
+	if err := s.failStale(ctx, run.ID); err != nil {
+		return err
+	}
 	files, _ := json.Marshal(p.Files)
 	pub, err := scanPub(s.store.Pool.QueryRow(ctx, `
 		INSERT INTO hf_publications (run_id, user_id, source_exec_id, repo_name, private, files, model_card, files_total, bytes_total)
@@ -301,10 +304,26 @@ func (s *Service) Publish(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// StaleQueuedAfter is how long a publication may wait for the agent worker before it is failed.
+const StaleQueuedAfter = "3 minutes"
+
+const StaleQueuedMessage = "The upload never started: the agents worker did not pick it up. Check that the agents service " +
+	"is running with the latest code (restart it if needed), then publish again. Nothing was uploaded."
+
+// failStale never leaves the researcher waiting forever: a publication no worker started is a failure.
+func (s *Service) failStale(ctx context.Context, runID int64) error {
+	_, err := s.store.Pool.Exec(ctx, `UPDATE hf_publications SET status='failed', stage='failed', finished_at=now(),
+		error=$2 WHERE run_id=$1 AND status='queued' AND created_at < now() - $3::interval`, runID, StaleQueuedMessage, StaleQueuedAfter)
+	return err
+}
+
 // GET /runs/{id}/huggingface — publications, newest first, with progress and the Hub link.
 func (s *Service) List(w http.ResponseWriter, r *http.Request) error {
 	run, _, err := s.runFor(r, "viewer")
 	if err != nil {
+		return err
+	}
+	if err := s.failStale(r.Context(), run.ID); err != nil {
 		return err
 	}
 	rows, err := s.store.Pool.Query(r.Context(), `SELECT `+pubCols+` FROM hf_publications WHERE run_id=$1 ORDER BY id DESC LIMIT 20`, run.ID)
