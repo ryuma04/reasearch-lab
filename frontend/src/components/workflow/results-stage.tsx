@@ -10,6 +10,8 @@ import type { StageKey } from "@/lib/workflow/state";
 import { formatBytes, formatDuration } from "@/lib/utils";
 import { whatIfStatusMeta } from "@/lib/status";
 import { Button } from "@/components/ui/button";
+import { RequestChanges } from "@/components/versions/request-changes";
+import { VersionList } from "@/components/versions/version-list";
 import { Markdown } from "@/components/ui/content";
 import { Badge, Card, SectionTitle } from "@/components/ui/primitives";
 import { EmptyState, QueryView, Skeleton } from "@/components/ui/states";
@@ -66,10 +68,14 @@ export function ResultsStage({ run, workspaceId, events, outcome, onOpen }: {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild size="sm" variant="secondary"><Link href={`${base}/replay?run=${runId}`}>Replay the run</Link></Button>
+          {outcome !== "stopped" && <RequestChanges runId={runId} workspaceId={workspaceId} />}
+          {outcome !== "stopped" && <Button asChild size="sm" variant="secondary"><Link href={`${base}/paper?run=${runId}`}>Prepare Research Paper Materials</Link></Button>}
           {outcome === "succeeded" && <Button asChild size="sm" variant="purple"><Link href={`${base}/publish?run=${runId}`}><UploadSimple size={15} /> Publish to Hugging Face</Link></Button>}
           {repo?.repo_url && <Button asChild size="sm" variant="outline"><a href={repo.repo_url} target="_blank" rel="noopener noreferrer"><ArrowSquareOut size={15} /> Repository</a></Button>}
         </div>
       </div>
+
+      <section aria-label="Versions" className="space-y-2"><h2 className="font-display text-lg font-bold">Versions</h2><VersionList runId={runId} workspaceId={workspaceId} /></section>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5" aria-label="Summary">
         <Stat label="Claims matched" value={sc.length ? `${matched}/${sc.length}` : "—"} sub={measured < sc.length ? `${sc.length - measured} not measured` : "all measured"} tone={sc.length && matched === sc.length ? "ok" : undefined} />

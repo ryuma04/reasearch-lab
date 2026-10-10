@@ -870,3 +870,25 @@ export interface ResourcesResponse {
   recommendations: ResourceRec[];
   originals: { datasets: { name?: string; url?: string }[]; repositories: { name?: string; url?: string }[] };
 }
+
+/* ── Versions (change requests), comparison and research-paper materials ── */
+export interface ChangeAnalysis {
+  intent?: string; unchanged?: string[]; modified?: string[]; added?: string[]; removed?: string[]; affected_modules?: string[];
+  research?: { still_valid?: string[]; needs_verification?: string[]; superseded?: string[]; needs_new_research?: boolean; topics?: string[] };
+  tests_to_add_or_rerun?: string[]; risks?: string[]; assumptions?: string[]; ambiguity?: string; clarifying_question?: string;
+  source?: "ai" | "fallback"; isolation?: { source_run_id: number; source_unchanged: boolean; files_copied: number };
+}
+export interface ChangeRequestInfo { id: number; source_run_id: number; new_run_id: number | null; request: string; status: "analyzing" | "analyzed" | "failed"; analysis: ChangeAnalysis; created_at: string }
+export interface VersionInfo { run_id: number; label: string; parent_run_id: number | null; status: string; stage: string; error: string; created_at: string; finished_at: string | null; change: string | null; change_status: string | null }
+export interface FileDiffInfo { path: string; status: "added" | "removed" | "modified"; added: number; removed: number; diff: string[] | null; note?: string }
+export interface CompareResult {
+  old: { run_id: number; status: string; stage: string; error: string }; new: { run_id: number; status: string; stage: string; error: string };
+  change: ChangeRequestInfo | null; files: FileDiffInfo[]; skipped: Record<string, string>;
+  metrics: { name: string; old: number | null; new: number | null }[];
+  scorecard: { old: Record<string, number>; new: Record<string, number> }; plan: { added: string[] | null; removed: string[] | null }; note: string;
+}
+export interface PaperSection { key: string; title: string; markdown: string }
+export interface PaperState {
+  status: "none" | "queued" | "generating" | "ready" | "partial" | "failed"; run_id: number; error?: string; stale?: boolean; sections: PaperSection[];
+  manifest?: { generated_at?: string; completeness?: Record<string, string>; missing?: Record<string, string[]>; method?: string; parent_run_id?: number | null } | null;
+}

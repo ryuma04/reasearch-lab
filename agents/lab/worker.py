@@ -117,6 +117,9 @@ class Worker:
                 from . import healer
                 with self._lock(run_id):
                     healer.run_session(run_id, int(job["session_id"]))
+            elif typ == "paper":  # research-paper materials for one version
+                from . import paper
+                paper.generate(run_id)
             elif typ == "hf_publish":  # Publish to Hugging Face
                 from . import hfpublish
                 hfpublish.publish(int(job["publication_id"]))

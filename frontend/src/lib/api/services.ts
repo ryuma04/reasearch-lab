@@ -57,6 +57,26 @@ export const resourceApi = {
   },
 };
 
+/* ── Versions, comparison and research-paper materials ── */
+
+export const versionApi = {
+  requestChange: async (runId: string, text: string): Promise<{ new_run_id: number; created: boolean; change: T.ChangeRequestInfo }> =>
+    (await request(ENDPOINTS.requestChange, { params: { id: runId }, body: { request: text } })) as { new_run_id: number; created: boolean; change: T.ChangeRequestInfo },
+  changeOfRun: async (runId: string, signal?: AbortSignal): Promise<T.ChangeRequestInfo | null> =>
+    ((await request(ENDPOINTS.changeOfRun, { params: { id: runId }, signal })) as { change: T.ChangeRequestInfo | null } | undefined)?.change ?? null,
+  versions: async (runId: string, signal?: AbortSignal): Promise<T.VersionInfo[]> =>
+    ((await request(ENDPOINTS.versions, { params: { id: runId }, signal })) as { versions: T.VersionInfo[] } | undefined)?.versions ?? [],
+  compare: async (oldRunId: string, newRunId: string, signal?: AbortSignal): Promise<T.CompareResult> =>
+    (await request(ENDPOINTS.compare, { params: { id: oldRunId }, query: { with: newRunId }, signal })) as T.CompareResult,
+  paper: async (runId: string, signal?: AbortSignal): Promise<T.PaperState> => {
+    const r = (await request(ENDPOINTS.paper, { params: { id: runId }, signal })) as Partial<T.PaperState> | undefined;
+    return { status: r?.status ?? "none", run_id: r?.run_id ?? Number(runId), error: r?.error, stale: r?.stale, sections: r?.sections ?? [], manifest: r?.manifest ?? null };
+  },
+  generatePaper: async (runId: string): Promise<void> => {
+    await request<unknown>(ENDPOINTS.generatePaper, { params: { id: runId } });
+  },
+};
+
 /* ── Workspaces ── */
 
 export const workspaceApi = {

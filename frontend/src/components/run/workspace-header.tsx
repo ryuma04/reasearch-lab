@@ -32,6 +32,8 @@ const TABS = [
   { seg: "/sandbox", label: "Code sandbox" },
   { seg: "/results/research", label: "Results", match: "/results" },
   { seg: "/replay", label: "Replay" },
+  { seg: "/compare", label: "Versions" },
+  { seg: "/paper", label: "Paper" },
   { seg: "/publish", label: "Publish" },
 ];
 

@@ -18,7 +18,7 @@ from langgraph.types import interrupt
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
-from . import bus, coding, db, gap, memory, planner, research, resources, steps, testing
+from . import bus, change, coding, db, gap, memory, planner, research, resources, steps, testing
 from .config import settings as cfg
 from .observer import edge, node
 from .project import fmt, fresh_project, load_settings, pdir, run_row
@@ -64,6 +64,17 @@ def n_start(s: State) -> State:
     run_id = s["run_id"]
     r = run_row(run_id)
     db.ex("UPDATE runs SET status='running', started_at=COALESCE(started_at, now()) WHERE id=%s", (run_id,))
+    ch = change.for_run(run_id)
+    if ch:  # a new version: its own copy of the source version's code, never the source folder
+        _stage(run_id, "research")
+        try:
+            change.start_version(run_id, ch)
+        except Exception as e:  # noqa: BLE001 - the version fails visibly; the source version is untouched
+            db.ex("UPDATE change_requests SET status='failed', updated_at=now() WHERE id=%s", (ch["id"],))
+            raise RuntimeError(f"could not create the new version: {e}") from e
+        bus.emit(run_id, "system", "plan_ready", "Plan: reuse research -> revised plan approval -> Coding -> Testing",
+                 "Coding waits for you to approve the revised plan")
+        return {}
     fresh_project(run_id)
     _stage(run_id, "research")
     with steps.step(run_id, "research.paper_reader", "Getting the paper (arXiv LaTeX source and PDF, or the upload)",
@@ -80,6 +91,10 @@ def n_start(s: State) -> State:
 
 def n_research(s: State) -> State:
     run_id = s["run_id"]
+    ch = change.for_run(run_id)
+    if ch:
+        change.targeted_research(run_id, ch)
+        return {}
     r = run_row(run_id)
     ws = db.q1("SELECT * FROM workspaces WHERE id=%s", (r["workspace_id"],))
     docs = research.acquire_papers(run_id, r["workspace_id"])
@@ -116,6 +131,8 @@ def n_research(s: State) -> State:
 
 def n_settings(s: State) -> State:
     run_id = s["run_id"]
+    if change.for_run(run_id):  # settings were copied from the source version
+        return {}
     coding.plan_settings(run_id, _brief(run_id), run_row(run_id)["compute_budget"])
     return {}
 
@@ -142,7 +159,8 @@ def _plan_review(run_id: int, brief: dict, reuse: bool = False, decisions: list 
     if reuse and path.exists():
         return json.loads(path.read_text(encoding="utf-8"))
     note = (db.q1("SELECT w.note FROM workspaces w JOIN runs r ON r.workspace_id=w.id WHERE r.id=%s", (run_id,)) or {}).get("note", "")
-    return planner.build_plans(run_id, brief, note or "", decisions if decisions is not None else resources.decisions_for(run_id, brief))
+    note = ((note or "") + "\n" + change.plan_note(run_id)).strip()
+    return planner.build_plans(run_id, brief, note, decisions if decisions is not None else resources.decisions_for(run_id, brief))
 
 
 def n_wait_plan(s: State) -> State:
@@ -178,6 +196,12 @@ def n_wait_plan(s: State) -> State:
 def n_code(s: State) -> State:
     run_id = s["run_id"]
     _stage(run_id, "coding")
+    if change.for_run(run_id):
+        try:
+            change.apply_changes(run_id)
+        except change.ChangeFailed as e:
+            return {"help_reason": str(e)}
+        return {"help_reason": ""}
     try:
         coding.write_code(run_id, _brief(run_id))
     except coding.NoCodeSource as e:

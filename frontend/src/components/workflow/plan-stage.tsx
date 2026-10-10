@@ -18,6 +18,7 @@ import { EmptyState, ErrorState, Skeleton } from "@/components/ui/states";
 import { SourceLink } from "./source-link";
 import { ImplementationPlans, planReviewOf } from "./implementation-plans";
 import { ResourceRecommendations } from "./resource-recommendations";
+import { ChangeBanner } from "@/components/versions/change-banner";
 import { useResolveCheckpoint } from "./shared";
 import type { AgentInfo } from "./types";
 
@@ -143,6 +144,8 @@ export function PlanStage({ runId, cp, canAct, agents, events }: { runId: string
         </div>
         {!pending && <Lock size={18} className="text-muted" aria-label="Locked" />}
       </div>
+
+      <ChangeBanner runId={runId} />
 
       <Block n={0} title="AI-Discovered Better Resources" hint="Discovered during research and compared with your own datasets and repositories. Nothing replaces your originals unless you accept it; your decisions are passed to the planner when you approve.">
         <ResourceRecommendations runId={runId} canAct={canAct} />
