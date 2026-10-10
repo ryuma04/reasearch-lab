@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { MagnifyingGlass, Minus, Plus } from "@phosphor-icons/react";
+import { ArrowSquareOut, MagnifyingGlass, Minus, Plus } from "@phosphor-icons/react";
 import { CARD_H, CARD_W, NO_FILTERS, RELATION_LABEL, activeFilterCount, facets, layoutTimeline, matches, type Filters } from "@/lib/explorer/timeline";
 import type { Relation, XData } from "@/lib/explorer/types";
+import { safeUrl } from "@/lib/sources";
 import { cn } from "@/lib/utils";
 import { Card, Input, Select } from "@/components/ui/primitives";
 import { EmptyState } from "@/components/ui/states";
@@ -107,13 +108,37 @@ export function TimelineView({ data }: { data: XData }) {
                     {layout.nodes.map((n) => {
                       const p = n.paper;
                       const faded = !!near && !near.has(p.id);
+                      const pUrl = safeUrl(p.url) ?? (p.arxiv_id ? safeUrl(`https://arxiv.org/abs/${p.arxiv_id}`) : (p.doi ? safeUrl(`https://doi.org/${p.doi}`) : null));
                       return (
-                        <button key={p.id} type="button" aria-pressed={sel === p.id} onClick={() => setSel(p.id === sel ? null : p.id)}
+                        <div key={p.id} role="button" tabIndex={0} aria-pressed={sel === p.id} onClick={() => setSel(p.id === sel ? null : p.id)}
+                          onKeyDown={(e) => {
+                            if (e.target !== e.currentTarget) return;
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              setSel(p.id === sel ? null : p.id);
+                            }
+                          }}
                           style={{ left: n.x, top: n.y, width: CARD_W, height: CARD_H }}
-                          className={cn("absolute flex flex-col justify-between rounded-xl border-2 px-2.5 py-2 text-left shadow-sm transition", REL_STYLE[p.relation], sel === p.id && "ring-2 ring-purple", faded && "opacity-30")}>
-                          <span className="line-clamp-2 text-[12.5px] font-semibold leading-tight">{p.title}</span>
+                          className={cn("absolute flex flex-col justify-between rounded-xl border-2 px-2.5 py-2 text-left shadow-sm transition cursor-pointer", REL_STYLE[p.relation], sel === p.id && "ring-2 ring-purple", faded && "opacity-30")}>
+                          <div className="flex items-start justify-between gap-1">
+                            <span className="line-clamp-2 text-[12.5px] font-semibold leading-tight">{p.title}</span>
+                            {pUrl && (
+                              <a
+                                href={pUrl}
+                                target="_blank"
+                                rel="noopener noreferrer nofollow"
+                                onClick={(e) => e.stopPropagation()}
+                                onPointerDown={(e) => e.stopPropagation()}
+                                title="Open paper in new tab"
+                                className="shrink-0 p-0.5 text-muted hover:text-purple"
+                              >
+                                <ArrowSquareOut size={12} aria-hidden />
+                                <span className="sr-only">Open paper in new tab</span>
+                              </a>
+                            )}
+                          </div>
                           <span className="flex items-center gap-1.5 text-[10.5px] text-muted"><span className="truncate">{authorsLine(p, 1)}</span>{p.category && <span className="ml-auto shrink-0 rounded bg-ink/5 px-1.5 py-0.5">{p.category}</span>}</span>
-                        </button>
+                        </div>
                       );
                     })}
                   </div>
