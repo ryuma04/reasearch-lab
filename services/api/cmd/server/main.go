@@ -25,7 +25,7 @@ import (
 	"github.com/ryuma04/tapu-sena/services/api/internal/runs"
 	"github.com/ryuma04/tapu-sena/services/api/internal/sandbox"
 	"github.com/ryuma04/tapu-sena/services/api/internal/store"
-	"github.com/ryuma04/tapu-sena/services/api/internal/telegram"
+	"github.com/ryuma04/tapu-sena/services/api/internal/voice"
 	"github.com/ryuma04/tapu-sena/services/api/internal/workspace"
 )
 
@@ -67,8 +67,7 @@ func run() error {
 	proofSvc := proof.New(st)
 	rl := ratelimit.New(b.Redis, cfg.RateLimits)
 	pushSvc := githubpush.New(cfg, st, b, authSvc)
-	tg := telegram.New(cfg, st, runSvc, pushSvc, agents)
-	b.OnEvent(tg.Notify)
+	voiceSvc := voice.New(cfg, st, agents)
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Recoverer)
@@ -87,9 +86,8 @@ func run() error {
 	r.Post("/auth/dev-login", h(authSvc.DevLogin))
 	r.Post("/auth/logout", h(authSvc.Logout))
 
-	// Public read-only live view (QR code link) and Telegram webhook
+	// Public read-only live view (QR code link)
 	runSvc.ShareRoutes(r)
-	r.Post("/telegram/webhook", h(tg.Webhook))
 
 	// Logged-in routes
 	r.Group(func(r chi.Router) {
@@ -127,8 +125,6 @@ func run() error {
 		r.Get("/runs/{id}/research", h(runSvc.Research))
 		r.Get("/runs/{id}/map", h(runSvc.Map))
 		r.Get("/runs/{id}/gap", h(runSvc.Gap))
-		r.Get("/runs/{id}/tasks", h(runSvc.Tasks))
-		r.Get("/runs/{id}/decisions", h(runSvc.Decisions))
 		r.Get("/runs/{id}/files", h(runSvc.Files))
 		r.Get("/runs/{id}/file", h(runSvc.File))
 		r.Post("/runs/{id}/whatif", h(runSvc.AskWhatIf))
@@ -139,13 +135,11 @@ func run() error {
 		r.Get("/metrics/{id}/proof", h(runSvc.MetricProof))
 		r.Get("/papers/{id}/pdf", h(runSvc.PaperPDF))
 
-		r.Get("/agents", h(runSvc.Agents))
-		r.Get("/agents/{id}/history", h(runSvc.AgentHistory))
-		r.Get("/team/evolution", h(runSvc.Evolution))
+		r.Get("/agents", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, http.StatusOK, runs.Agents) })
 		r.Get("/memory/search", h(runSvc.MemorySearch))
 
-		r.Post("/telegram/link", h(tg.Link))
-		r.Post("/voice/command", h(tg.VoiceCommand))
+		r.Post("/voice/command", h(voiceSvc.Command))
+		r.Post("/voice/text", h(voiceSvc.Text))
 	})
 
 	// Internal routes: agent worker and n8n only (X-Internal-Token)
@@ -206,7 +200,7 @@ func health(cfg *config.Config, st *store.Store, b *bus.Bus, agents *agentsclien
 		out["n8n"] = n8n
 		out["credentials"] = map[string]any{
 			"github_oauth": cfg.GitHubConfigured(), "groq": cfg.GroqAPIKey != "", "gemini": cfg.GeminiAPIKey != "",
-			"telegram": cfg.TelegramConfigured(), "dev_login": cfg.DevLoginEnabled,
+			"dev_login": cfg.DevLoginEnabled,
 		}
 		ok := out["database"].(map[string]any)["ok"] == true && out["redis"].(map[string]any)["ok"] == true
 		out["ok"] = ok

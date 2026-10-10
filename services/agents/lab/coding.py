@@ -1,6 +1,5 @@
-"""Coding Agent: Code Writer (2.1) and Code Reviewer and Debugger (2.2), plus the specialists
-that support it (Dataset Subset Planner, Hyperparameter Scout, Environment Fixer) and the
-Compute Budget Planner test drive.
+"""Coding Agent: Code Writer (2.1) and Code Reviewer and Debugger (2.2), settings with their
+sources, the environment fix for version conflicts and the Compute Budget Planner test drive.
 
 Contract for every generated project (also given to the AI writer):
   configs/config.yaml   every setting (written by us from the settings table)
@@ -9,16 +8,17 @@ Contract for every generated project (also given to the AI writer):
                         LAB_BUDGET_FRACTION (scale epochs) and LAB_MAX_STEPS (test drive ->
                         results/timing.json with estimated_seconds)
   src/download_data.py  (optional) downloads data into data/ during the install step
-  requirements.txt      exact versions after install
+  requirements.txt      package names; the sandbox already has torch (CPU), torchvision, numpy, pandas,
+                        scikit-learn, xgboost, scipy, matplotlib, pytest, pyyaml - do not pin those
+                        (exact versions are written automatically after install)
 """
 from __future__ import annotations
 
 import json
 import logging
 import re
-from pathlib import Path
 
-from . import api, bus, db, llm, memory, recipes, team
+from . import api, bus, llm, memory, recipes, steps
 from .config import settings as cfg
 from .observer import edge, node
 from .project import apply_ops, load_settings, pdir, record_settings, write_config, write_files
@@ -29,8 +29,35 @@ BUDGET_SECONDS = {"quick": 300, "standard": 900, "deep": 3600}
 
 CONTRACT = __doc__.split("Contract for every generated project (also given to the AI writer):", 1)[1]
 
+# Pre-installed in the sandbox image; a different pinned version would trigger a huge download
+# (e.g. the CUDA build of torch from PyPI), so pins on these are removed before installing.
+PREINSTALLED = {"torch", "torchvision", "numpy", "pandas", "scikit-learn", "sklearn", "xgboost", "scipy",
+                "matplotlib", "pytest", "pyyaml", "tqdm", "requests"}
+
+
+def unpin_preinstalled(text: str) -> tuple[str, list[str]]:
+    out, changed = [], []
+    for line in text.splitlines():
+        name = re.split(r"[<>=!~\[ ;]", line.strip(), maxsplit=1)[0].lower()
+        if name in PREINSTALLED and name != line.strip().lower():
+            out.append(name)
+            changed.append(line.strip())
+        elif line.strip():
+            out.append(line.strip())
+    return "\n".join(out) + "\n", changed
+
+
 PIP_NAMES = {"sklearn": "scikit-learn", "cv2": "opencv-python-headless", "yaml": "pyyaml", "PIL": "pillow",
              "skimage": "scikit-image", "torch_geometric": "torch-geometric"}
+
+
+def _norm(v: str) -> str:
+    """Compare config values loosely: quotes, spacing and case do not matter."""
+    v = v.strip().strip('"').strip("'")
+    try:
+        return json.dumps(json.loads(v), sort_keys=True)
+    except ValueError:
+        return re.sub(r"\s+", "", v).lower()
 
 
 def recipe_for(brief: dict):
@@ -38,11 +65,11 @@ def recipe_for(brief: dict):
     return recipes.find(p.get("title", ""), p.get("arxiv_id", ""), p.get("summary", ""))
 
 
-# ---------- settings (specialists) ----------
+# ---------- settings ----------
 
-def plan_settings(run_id: int, brief: dict, plan: dict, budget: str) -> list[dict]:
-    """Every setting with its source. Compute changes are owned by the Dataset Subset Planner,
-    assumptions for missing details by the Hyperparameter Scout (when the team has them)."""
+def plan_settings(run_id: int, brief: dict, budget: str) -> list[dict]:
+    """Every setting with its source (Missing Details Log): paper, our assumption for details the
+    paper does not state, or changed to fit the compute budget."""
     recipe = recipe_for(brief)
     paper = brief["papers"][0]
     if recipe:
@@ -55,28 +82,18 @@ def plan_settings(run_id: int, brief: dict, plan: dict, budget: str) -> list[dic
                               "source_ref": f"p.{s['page']}" if s.get("page") else "", "reason": (s.get("quote") or "")[:200]})
         items.append({"name": "seed", "value": 0, "source": "assumption", "reason": "fixed seed for repeatable runs"})
 
-    assignments = plan.get("assignments", {})
     compute = [s for s in items if s["source"] == "compute_change"]
     assumed = [s for s in items if s["source"] == "assumption"]
-    if compute and "data_budgeting" in assignments:
-        with team.task(run_id, assignments["data_budgeting"], "data_budgeting",
-                       f"Fitting the experiment into the '{budget}' budget ({BUDGET_SECONDS[budget] // 60} minutes)",
-                       "The full dataset and training length do not fit this laptop's budget") as t:
-            for s in compute:
-                bus.emit(run_id, t.slug, "assumption", f"{s['name']} = {s['value']} (paper: {s.get('paper_value') or 'n/a'})",
-                         s.get("reason", ""), {"setting": s["name"], "source": "compute_change"})
-            t.outcome = 1.0
-            t.notes = f"{len(compute)} compute changes recorded"
-    if assumed and "hyperparameter_choice" in assignments:
-        with team.task(run_id, assignments["hyperparameter_choice"], "hyperparameter_choice",
-                       f"Choosing values for {len(assumed)} settings the paper does not state",
-                       "Missing details must be filled and labelled as assumptions") as t:
-            for s in assumed:
-                bus.emit(run_id, t.slug, "assumption", f"{s['name']} = {s['value']}", s.get("reason", ""),
-                         {"setting": s["name"], "source": "assumption"})
-            t.outcome = 1.0
-            t.notes = f"{len(assumed)} assumptions recorded"
-    record_settings(run_id, items)
+    with steps.step(run_id, "coding.writer", f"Choosing settings for the '{budget}' budget ({BUDGET_SECONDS[budget] // 60} minutes)",
+                    "Every setting is labelled: from the paper, our assumption, or changed to fit compute") as t:
+        for s in compute:
+            bus.emit(run_id, t.slug, "assumption", f"{s['name']} = {s['value']} (paper: {s.get('paper_value') or 'n/a'})",
+                     s.get("reason", ""), {"setting": s["name"], "source": "compute_change"})
+        for s in assumed:
+            bus.emit(run_id, t.slug, "assumption", f"{s['name']} = {s['value']}", s.get("reason", ""),
+                     {"setting": s["name"], "source": "assumption"})
+        record_settings(run_id, items)
+        t.notes = f"{len(items)} settings ({len(compute)} compute changes, {len(assumed)} assumptions)"
     return items
 
 
@@ -113,11 +130,11 @@ def apply_researcher_edit(run_id: int, instruction: str) -> list[str]:
 
 # ---------- Code Writer ----------
 
-def write_code(run_id: int, brief: dict, plan: dict) -> dict:
+def write_code(run_id: int, brief: dict) -> dict:
     root = pdir(run_id)
     recipe = recipe_for(brief)
-    slug = plan["assignments"].get("write_code", "coding.writer")
-    with team.task(run_id, slug, "write_code", "Writing the project: data loading, model, training, evaluation",
+    slug = "coding.writer"
+    with steps.step(run_id, slug, "Writing the project: data loading, model, training, evaluation",
                    "Every number must come from results/metrics.json written by this code") as t:
         if recipe:
             files = recipe.files()
@@ -131,10 +148,14 @@ def write_code(run_id: int, brief: dict, plan: dict) -> dict:
             t.notes = f"AI wrote {len(files)} files"
         else:
             raise NoCodeSource()
+        if "requirements.txt" in files:
+            files["requirements.txt"], unpinned = unpin_preinstalled(files["requirements.txt"])
+            if unpinned:
+                bus.emit(run_id, slug, "progress", "Using the sandbox's pre-installed versions of: " + ", ".join(unpinned),
+                         "Pinning a different version would download gigabytes (e.g. the CUDA build of PyTorch)")
         written = write_files(root, files)
         write_config(root, load_settings(run_id))
         written.append("configs/config.yaml")
-        t.outcome = 1.0
         nodes = [node(f"file:{f}", "file", f, "done") for f in written if f.endswith((".py", ".R", ".yaml"))]
         edges_ = [edge(f"file:{f}", "agent:" + slug, "written by") for f in written if f.endswith(".py")]
         bus.emit(run_id, slug, "files_written", f"Created {len(written)} files: " + ", ".join(sorted(written)[:8]),
@@ -152,18 +173,14 @@ def _llm_write(run_id: int, brief: dict, slug: str) -> dict[str, str]:
     paper = brief["papers"][0]
     settings_ = load_settings(run_id)
     extra = "\n".join(bus.instructions(run_id, "coding"))
-    domain = ""
-    for a in db.q("SELECT a.slug FROM agents a JOIN agent_versions v ON v.id=a.current_version_id "
-                  "WHERE a.template='domain_specialist' AND a.stage NOT IN ('retired','merged','replaced')"):
-        domain += team.instructions(a["slug"]) + "\n"
     data, _ = llm.chat_json("planner",
-        team.instructions(slug) + "\nYou write complete, runnable Python projects for CPU. Follow this contract exactly:\n"
+        steps.instructions(slug) + "\nYou write complete, runnable Python projects for CPU. Follow this contract exactly:\n"
         + CONTRACT + '\nReturn JSON {"files": {"path": "content"}, "notes": "..."}. Do not include configs/config.yaml '
         "(it is generated from the settings). Use only settings names given. Keep training small enough for a laptop CPU.",
         json.dumps({"paper": {k: paper.get(k) for k in ("title", "summary", "method", "claims", "missing_details")},
                     "settings": [{"name": s["name"], "value": s["value"]} for s in settings_],
                     "metric_names_required": [c["metric_name"] for c in paper.get("claims", [])],
-                    "domain_guidance": domain, "researcher_instructions": extra}, default=str),
+                    "field": paper.get("field", ""), "researcher_instructions": extra}, default=str),
         max_tokens=8000)
     files = (data or {}).get("files") if isinstance(data, dict) else None
     return {k: v for k, v in (files or {}).items() if isinstance(v, str) and k != "configs/config.yaml"}
@@ -171,18 +188,18 @@ def _llm_write(run_id: int, brief: dict, slug: str) -> dict[str, str]:
 
 # ---------- Code Reviewer (before running) ----------
 
-def review(run_id: int, brief: dict, plan: dict) -> list[str]:
+def review(run_id: int, brief: dict) -> list[str]:
     root = pdir(run_id)
-    slug = plan["assignments"].get("review_code", "coding.reviewer")
+    slug = "coding.reviewer"
     issues: list[str] = []
-    with team.task(run_id, slug, "review_code", "Reviewing the code against the Research Brief before running",
+    with steps.step(run_id, slug, "Reviewing the code against the Research Brief before running",
                    "Catching a wrong setting now is cheaper than a wasted run") as t:
         cfg_text = (root / "configs" / "config.yaml").read_text(encoding="utf-8")
         for s in load_settings(run_id):
             if s["source"] == "paper":
                 key = s["name"].split(".")[-1]
-                m = re.search(rf"^\s*{re.escape(key)}:\s*([^\s#]+)", cfg_text, flags=re.M)
-                if m and m.group(1).strip('"') != str(s["value"]):
+                m = re.search(rf"^\s*{re.escape(key)}:\s*(.*?)(?:\s+#.*)?$", cfg_text, flags=re.M)
+                if m and _norm(m.group(1)) != _norm(str(s["value"])):
                     issues.append(f"{s['name']} is {m.group(1)} in the config but the paper says {s['value']}")
         train = root / "src" / "train.py"
         if not train.exists():
@@ -190,19 +207,20 @@ def review(run_id: int, brief: dict, plan: dict) -> list[str]:
         elif "metrics.json" not in train.read_text(encoding="utf-8"):
             issues.append("src/train.py does not write results/metrics.json")
         if llm.available() and train.exists():
-            res = llm.chat("reviewer", team.instructions(slug) + " List concrete mismatches between the code and the paper "
-                           "(one per line, max 5). Reply 'OK' if none.",
+            res = llm.chat("reviewer", steps.instructions(slug) + " You cannot run code or call tools: read the code and "
+                           "list concrete mismatches between the code and the paper as plain text (one per line, max 5). "
+                           "Reply 'OK' if none.",
                            f"Brief: {json.dumps(brief['papers'][0].get('method'))}\nConfig:\n{cfg_text}\nCode:\n"
                            + train.read_text(encoding="utf-8")[:12000], max_tokens=600)
-            if res and res.text.strip().upper() != "OK":
-                issues += [l.strip("-• ").strip() for l in res.text.splitlines() if l.strip() and l.strip().upper() != "OK"][:5]
+            if res and res.text.strip().upper() != "OK" and "<tool_call>" not in res.text and "<function" not in res.text:
+                issues += [l.strip("-• ").strip() for l in res.text.splitlines()
+                           if l.strip() and l.strip().upper() != "OK" and not l.strip().startswith("<")][:5]
         if issues:
             write_config(root, load_settings(run_id))  # the config is regenerated from the settings table
             bus.emit(run_id, slug, "review", f"Review found {len(issues)} issue(s): " + "; ".join(issues[:3]),
                      "Fixed before running", {"issues": issues})
         else:
             bus.emit(run_id, slug, "review", "Review passed: code matches the Research Brief", "")
-        t.outcome = 1.0
         t.notes = "; ".join(issues)[:500]
     return issues
 
@@ -231,9 +249,9 @@ def install(run_id: int, agent: str, timeout: int = 1200) -> api.ExecResult:
     return api.sandbox_exec(run_id, "install", INSTALL_CMD, timeout, agent)
 
 
-def test_drive(run_id: int, plan: dict, budget: str) -> dict:
+def test_drive(run_id: int, budget: str) -> dict:
     """Compute Budget Planner: a ~20 second test drive to estimate the full run on this computer."""
-    slug = plan["assignments"].get("write_code", "coding.writer")
+    slug = "coding.writer"
     res = api.sandbox_exec(run_id, "execute", "python src/train.py", 180, slug,
                            env={"LAB_MAX_STEPS": "40"}, collect_metrics=False)
     timing = {}
@@ -253,8 +271,8 @@ def test_drive(run_id: int, plan: dict, budget: str) -> dict:
     return out
 
 
-def execute(run_id: int, plan: dict, timeout: int, env: dict | None = None) -> api.ExecResult:
-    slug = plan["assignments"].get("write_code", "coding.writer")
+def execute(run_id: int, timeout: int, env: dict | None = None) -> api.ExecResult:
+    slug = "coding.writer"
     return api.sandbox_exec(run_id, "execute", "python src/train.py", timeout, slug, env=env or {})
 
 
@@ -293,7 +311,7 @@ def llm_fix(run_id: int, log_tail: str, slug: str) -> tuple[list[dict], str] | N
     files = {p.relative_to(root).as_posix(): p.read_text(encoding="utf-8", errors="ignore")[:8000]
              for p in list((root / "src").rglob("*.py"))[:6]}
     req = (root / "requirements.txt").read_text() if (root / "requirements.txt").exists() else ""
-    data, _ = llm.chat_json("planner", team.instructions(slug) + "\nFind the cause of the error and fix it with minimal "
+    data, _ = llm.chat_json("planner", steps.instructions(slug) + "\nFind the cause of the error and fix it with minimal "
         'changes. JSON: {"cause": "...", "ops": [{"op": "replace", "path": "...", "old": "exact text", "new": "..."} | '
         '{"op": "write", "path": "...", "content": "..."} | {"op": "add_requirement", "value": "pkg==ver"}]}',
         json.dumps({"error_log_tail": log_tail[-6000:], "requirements": req, "files": files,
@@ -303,7 +321,7 @@ def llm_fix(run_id: int, log_tail: str, slug: str) -> tuple[list[dict], str] | N
     return None
 
 
-def ensure_installed(run_id: int, plan: dict, help_instruction: str = "", max_tries: int = 4) -> tuple[bool, str]:
+def ensure_installed(run_id: int, help_instruction: str = "", max_tries: int = 4) -> tuple[bool, str]:
     """Install step with repair: fixes from memory/patterns/AI, Environment Fixer after two failures."""
     root = pdir(run_id)
     if (root / ".needs_install").exists():
@@ -311,37 +329,37 @@ def ensure_installed(run_id: int, plan: dict, help_instruction: str = "", max_tr
         (root / ".installed").unlink(missing_ok=True)
     if (root / ".installed").exists():
         return True, ""
-    reviewer = plan["assignments"].get("debug_code", "coding.reviewer")
+    reviewer = "coding.reviewer"
     tail = ""
     for attempt in range(1, max_tries + 1):
         bus.check_control(run_id)
-        res = install(run_id, plan["assignments"].get("write_code", "coding.writer"))
+        res = install(run_id, "coding.writer")
         if res.ok:
             (root / ".installed").write_text("ok")
             (root / ".needs_install").unlink(missing_ok=True)
             return True, ""
         tail = res.log_tail
         if attempt >= 2:
-            _environment_fixer(run_id, plan, tail)
-        elif not _fix(run_id, plan, reviewer, tail, attempt, help_instruction):
+            _environment_fixer(run_id, tail)
+        elif not _fix(run_id, reviewer, tail, attempt, help_instruction):
             return False, tail
     return False, tail
 
 
-def repair_and_run(run_id: int, plan: dict, timeout: int, env: dict | None = None,
+def repair_and_run(run_id: int, timeout: int, env: dict | None = None,
                    help_instruction: str = "") -> tuple[api.ExecResult | None, str]:
     """write -> run -> read the error -> fix loop. Returns (successful result, '') or (None, last error)."""
-    reviewer = plan["assignments"].get("debug_code", "coding.reviewer")
+    reviewer = "coding.reviewer"
     max_tries = cfg.max_repair_attempts
     last_tail = ""
     if help_instruction:
         bus.emit(run_id, reviewer, "progress", f"Applying the researcher's help: {help_instruction}", "")
     for attempt in range(1, max_tries + 2):
         bus.check_control(run_id)
-        ok, tail = ensure_installed(run_id, plan, help_instruction)
+        ok, tail = ensure_installed(run_id, help_instruction)
         if not ok:
             return None, tail
-        res = execute(run_id, plan, timeout, env)
+        res = execute(run_id, timeout, env)
         if res.ok and res.metrics:
             return res, ""
         last_tail = res.log_tail if not res.ok else (res.metrics_error or "the code ran but wrote no metrics.json")
@@ -349,14 +367,14 @@ def repair_and_run(run_id: int, plan: dict, timeout: int, env: dict | None = Non
             last_tail += "\n[the run hit its time limit]"
         if attempt > max_tries:
             break
-        if not _fix(run_id, plan, reviewer, last_tail, attempt, help_instruction):
+        if not _fix(run_id, reviewer, last_tail, attempt, help_instruction):
             break
     return None, last_tail
 
 
-def _fix(run_id: int, plan: dict, slug: str, log_tail: str, attempt: int, help_instruction: str) -> bool:
+def _fix(run_id: int, slug: str, log_tail: str, attempt: int, help_instruction: str) -> bool:
     """One debugging step: Lab Memory first, then known patterns, then the AI debugger."""
-    with team.task(run_id, slug, "debug_code", f"Reading the error and fixing it (attempt {attempt})",
+    with steps.step(run_id, slug, f"Reading the error and fixing it (attempt {attempt})",
                    "Lab Memory is searched first: a known fix is applied immediately") as t:
         sig = memory.error_signature(log_tail)
         bus.emit(run_id, slug, "error_seen", f"Error: {sig[:200]}", "", {"signature": sig})
@@ -370,27 +388,23 @@ def _fix(run_id: int, plan: dict, slug: str, log_tail: str, attempt: int, help_i
                      f"Same error seen in run #{src}; that fix worked" if src else "Known fix from Lab Memory",
                      {"memory_item": known["id"], "from_memory": True, "learned_in_run": src})
             _mark_pending(run_id, known["id"], log_tail, ops, known["details"].get("description", ""), reinstall)
-            t.outcome, t.notes = 1.0, f"fixed from memory item {known['id']}"
+            t.notes = f"fixed from memory item {known['id']}"
             return True
         found = heuristic_fix(log_tail) or llm_fix(run_id, log_tail, slug)
         if help_instruction and not found:
             found = llm_fix(run_id, log_tail + "\nResearcher says: " + help_instruction, slug)
         if not found:
-            t.outcome, t.wasted_tries = 0.0, 1
             t.notes = f"no fix found for: {sig[:200]}"
             bus.emit(run_id, slug, "fix_failed", "No fix found for this error", sig[:200])
             return False
         ops, desc = found
         done, reinstall = apply_ops(run_id, _expand(run_id, ops))
         if not done:
-            t.outcome, t.wasted_tries = 0.0, 1
             t.notes = "fix could not be applied"
             return False
         bus.emit(run_id, slug, "fix_applied", f"Fix: {desc} (" + ", ".join(done) + ")", "Found by reading the error",
                  {"from_memory": False})
         _mark_pending(run_id, None, log_tail, ops, desc, reinstall)
-        t.outcome = 0.6  # confirmed (raised) when the next run succeeds
-        t.wasted_tries = 1 if attempt > 1 else 0
         t.notes = desc
         return True
 
@@ -427,11 +441,10 @@ def confirm_fixes(run_id: int, success: bool) -> None:
     f.unlink()
 
 
-def _environment_fixer(run_id: int, plan: dict, log_tail: str) -> None:
-    slug = plan["assignments"].get("fix_environment") or team.assign(run_id, "fix_environment",
-                                                                      "installation failed twice (version conflicts)")
-    plan["assignments"]["fix_environment"] = slug
-    with team.task(run_id, slug, "fix_environment", "Installation failed twice: finding compatible library versions",
+def _environment_fixer(run_id: int, log_tail: str) -> None:
+    """Installation failed twice: the Debugger relaxes version pins to find compatible libraries."""
+    slug = "coding.reviewer"
+    with steps.step(run_id, slug, "Installation failed twice: finding compatible library versions",
                    "Version conflicts are the most common reason research code does not run") as t:
         ops = [{"op": "remove_pins"}]
         h = heuristic_fix(log_tail)
@@ -439,6 +452,6 @@ def _environment_fixer(run_id: int, plan: dict, log_tail: str) -> None:
             ops += h[0]
         done, _ = apply_ops(run_id, ops)
         (pdir(run_id) / ".needs_install").write_text("1")
-        bus.emit(run_id, slug, "fix_applied", "Environment Fixer: " + ", ".join(done), "")
+        bus.emit(run_id, slug, "fix_applied", "Environment fix: " + ", ".join(done), "")
         _mark_pending(run_id, None, log_tail, ops, "relax version pins after install conflicts", True)
-        t.outcome, t.notes = 0.6, ", ".join(done)
+        t.notes = ", ".join(done)

@@ -127,7 +127,7 @@ func (s *Service) ShareEvents(w http.ResponseWriter, r *http.Request) error {
 	return s.writeEvents(w, r, run.ID)
 }
 
-// shareView exposes a read-only JSON view (scorecard, map, whatif, settings, tasks) through a share link.
+// shareView exposes a read-only JSON view (scorecard, map, whatif, settings) through a share link.
 func (s *Service) shareView(fn func(context.Context, int64) (json.RawMessage, error)) http.HandlerFunc {
 	return httpx.Handler(func(w http.ResponseWriter, r *http.Request) error {
 		run, err := s.shareRun(r)
@@ -155,5 +155,4 @@ func (s *Service) ShareRoutes(r chi.Router) {
 	r.Get("/share/{token}/runs/{runId}/map", s.shareView(s.store.ResearchMap))
 	r.Get("/share/{token}/runs/{runId}/whatif", s.shareView(s.store.WhatIfBranches))
 	r.Get("/share/{token}/runs/{runId}/settings", s.shareView(s.store.Settings))
-	r.Get("/share/{token}/runs/{runId}/tasks", s.shareView(s.store.AgentTasksForRun))
 }

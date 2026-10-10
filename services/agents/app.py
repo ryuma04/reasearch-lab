@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
-from lab import api, bus, db, intent, llm, memory, team
+from lab import api, bus, db, intent, llm, memory, steps
 from lab.config import settings
 from lab.worker import worker
 
@@ -24,7 +24,6 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     db.open_pool()
-    team.seed()
     worker.start()
     yield
     worker.stop.set()
@@ -56,7 +55,7 @@ def health() -> dict:
     out["llm_providers"] = llm.providers()
     out["llm_mode"] = "ai" if llm.available() else "fallback (no AI keys: recipes and rules only)"
     out["embedder"] = memory.embedder_name()
-    out["agents"] = db.scalar("SELECT count(*) FROM agents")
+    out["agents"] = list(steps.AGENTS)
     return out
 
 
@@ -94,9 +93,10 @@ def run_summary(run_id: int) -> dict:
     return {"text": intent.summary(run_id)}
 
 
-@app.get("/agents/templates", dependencies=[Depends(internal)])
-def templates() -> dict:
-    return {k: {"name": v[0], "model_role": v[1], "skills": v[2], "instructions": v[3]} for k, v in team.SPECIALIST_TEMPLATES.items()}
+@app.get("/agents", dependencies=[Depends(internal)])
+def agents() -> dict:
+    """The fixed agents of the pipeline."""
+    return {k: {"name": v[0], "instructions": v[1]} for k, v in steps.AGENTS.items()}
 
 
 if __name__ == "__main__":

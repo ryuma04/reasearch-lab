@@ -3,8 +3,10 @@ fix operations and child runs (what-if branches and gap experiments)."""
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
+import stat
 from pathlib import Path
 
 from . import db
@@ -59,9 +61,14 @@ def load_settings(run_id: int) -> list[dict]:
 
 
 def _typed(v: str):
-    if isinstance(v, (int, float, bool)):
+    if isinstance(v, (int, float, bool, list, dict)):
         return v
     s = str(v).strip()
+    if s[:1] in "[{":
+        try:
+            return json.loads(s)
+        except ValueError:
+            pass
     if s.lower() in ("true", "false"):
         return s.lower() == "true"
     try:
@@ -75,6 +82,8 @@ def _typed(v: str):
 
 
 def _yaml_scalar(v) -> str:
+    if isinstance(v, (list, dict)):
+        return json.dumps(v)  # JSON flow style is valid YAML
     if isinstance(v, bool):
         return "true" if v else "false"
     if isinstance(v, (int, float)):
@@ -178,6 +187,25 @@ def apply_ops(run_id: int, ops: list[dict]) -> tuple[list[str], bool]:
 COPY_IGNORE = shutil.ignore_patterns(".git", "logs", "results", "__pycache__", ".pytest_cache")
 
 
+def remove_tree(path: Path) -> None:
+    """rmtree that also removes read-only files (git objects are read-only on Windows)."""
+    def make_writable_and_retry(func, p, _exc):
+        os.chmod(p, stat.S_IWRITE)
+        func(p)
+
+    if path.exists():
+        shutil.rmtree(path, onexc=make_writable_and_retry)
+
+
+def fresh_project(run_id: int) -> Path:
+    """A new run always starts from an empty project folder (never reuse leftovers)."""
+    r = run_row(run_id)
+    p = project_dir(r["workspace_id"], run_id)
+    remove_tree(p)
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
 def create_child_run(parent_id: int, kind: str, branch: str) -> int:
     parent = run_row(parent_id)
     child_id = db.scalar("""INSERT INTO runs (workspace_id, parent_run_id, kind, branch_name, compute_budget, status, stage,
@@ -187,8 +215,7 @@ def create_child_run(parent_id: int, kind: str, branch: str) -> int:
                           parent["primary_metric"], parent["primary_higher_is_better"]))
     src = pdir(parent_id)
     dst = project_dir(parent["workspace_id"], child_id)
-    if dst.exists():
-        shutil.rmtree(dst)
+    remove_tree(dst)
     shutil.copytree(src, dst, ignore=COPY_IGNORE)
     for s in load_settings(parent_id):
         record_settings(child_id, [s])

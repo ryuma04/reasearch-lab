@@ -171,10 +171,12 @@ def locate(doc: PaperDoc, quotes: list[str], value: float | None = None) -> tupl
         if page_no:
             break
     if not page_no and value is not None:
-        v = str(int(value)) if float(value).is_integer() else str(value)
-        for i, p in enumerate(doc.pages, 1):
-            if re.search(rf"(?<![\d.]){re.escape(v)}(?![\d.])", p):
-                page_no, found = i, v
+        for v in number_forms(value):
+            for i, p in enumerate(doc.pages, 1):
+                if re.search(rf"(?<![\d.]){re.escape(v)}(?![\d])", p):
+                    page_no, found = i, v
+                    break
+            if page_no:
                 break
     if not page_no or not doc.pdf_path:
         return page_no, None, found
@@ -191,6 +193,38 @@ def locate(doc: PaperDoc, quotes: list[str], value: float | None = None) -> tupl
     except Exception as e:  # noqa: BLE001
         log.warning("locate failed: %s", e)
     return page_no, None, found
+
+
+def number_forms(value: float) -> list[str]:
+    """Ways a number can be written in a paper: 74, 0.95, 95% (as 95), 6.7e-4 as "6.7" + exponent."""
+    v = float(value)
+    forms = [str(int(v)) if v.is_integer() else f"{v:g}"]
+    if 0 < abs(v) < 1:
+        forms.append(f"{v * 100:g}")                       # 0.952 written as 95.2(%)
+    mant = f"{v:.3e}".split("e")[0].rstrip("0").rstrip(".")
+    if mant not in forms and (abs(v) < 1e-2 or abs(v) >= 1e5):
+        forms.append(mant)                                 # 6.7e-04 written as 6.7 x 10^-4
+    return forms
+
+
+def _latex_plain(s: str) -> str:
+    s = re.sub(r"\\(times|cdot)", " x ", s)
+    s = re.sub(r"[$\\{}^~]", " ", s)
+    return re.sub(r"\s+", " ", s).lower()
+
+
+def in_source(doc: PaperDoc, quotes: list[str], value: float) -> str:
+    """Verify a claim against the full paper text and the arXiv LaTeX source (anti-fabrication check).
+    Returns the matching snippet, or '' if the number does not appear in the paper at all."""
+    hay = _latex_plain(doc.latex + "\n" + doc.text)
+    for q in quotes:
+        if q and _latex_plain(q) in hay:
+            return q
+    for v in number_forms(value):
+        m = re.search(rf"(?<![\d.]){re.escape(v)}(?![\d])", hay)
+        if m:
+            return hay[max(0, m.start() - 60): m.end() + 40].strip()
+    return ""
 
 
 def extract(run_id: int, doc: PaperDoc, note: str) -> dict:
@@ -220,10 +254,13 @@ def extract(run_id: int, doc: PaperDoc, note: str) -> dict:
             continue
         quotes = c.get("quotes") or [c.get("quote", "")]
         page, pos, found = locate(doc, quotes, value)
-        verified = bool(found) or not doc.pages
-        if doc.pages and not found:
-            log.info("claim not found in paper text, skipped: %s", c)
-            continue
+        verified = bool(found) or not (doc.pages or doc.latex)
+        if not found and (doc.pages or doc.latex):
+            found = in_source(doc, quotes, value)  # e.g. LaTeX "$6.7 \\times 10^{-4}$" vs PDF text
+            if not found:
+                log.info("claim number not found anywhere in the paper, skipped (anti-fabrication): %s", c)
+                continue
+            verified = True
         row = db.q1("""INSERT INTO claims (paper_id, metric_name, description, value, unit, higher_is_better, tolerance,
                                            page, table_ref, position_on_page, condition, quote)
                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",

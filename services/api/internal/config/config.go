@@ -32,6 +32,7 @@ type Config struct {
 	GitHubClientSecret string
 
 	GroqAPIKey   string
+	GroqAPIKeys  []string // all keys, rotated when one hits its limit
 	GeminiAPIKey string
 	WhisperModel string
 	FastModel    string
@@ -47,13 +48,9 @@ type Config struct {
 	N8NWebhookURL      string
 	PushDirectFallback bool
 	GitleaksBin        string
-
-	TelegramBotToken      string
-	TelegramWebhookSecret string
 }
 
-func (c *Config) GitHubConfigured() bool   { return c.GitHubClientID != "" && c.GitHubClientSecret != "" }
-func (c *Config) TelegramConfigured() bool { return c.TelegramBotToken != "" }
+func (c *Config) GitHubConfigured() bool { return c.GitHubClientID != "" && c.GitHubClientSecret != "" }
 
 // Load reads .env (from the working directory or up to three parents) without
 // overriding variables that are already set, then builds the Config.
@@ -79,8 +76,8 @@ func Load() (*Config, error) {
 		GitHubClientID:     get("GITHUB_CLIENT_ID", ""),
 		GitHubClientSecret: get("GITHUB_CLIENT_SECRET", ""),
 
-		GroqAPIKey:   get("GROQ_API_KEY", ""),
-		GeminiAPIKey: get("GEMINI_API_KEY", ""),
+		GroqAPIKey:   firstKey(get("GROQ_API_KEYS", get("GROQ_API_KEY", ""))),
+		GeminiAPIKey: firstKey(get("GEMINI_API_KEYS", get("GEMINI_API_KEY", ""))),
 		WhisperModel: get("GROQ_MODEL_WHISPER", "whisper-large-v3-turbo"),
 		FastModel:    get("GROQ_MODEL_FAST", "llama-3.1-8b-instant"),
 
@@ -95,15 +92,18 @@ func Load() (*Config, error) {
 		N8NWebhookURL:      get("N8N_WEBHOOK_URL", ""),
 		PushDirectFallback: getBool("PUSH_DIRECT_FALLBACK", true),
 		GitleaksBin:        get("GITLEAKS_BIN", "gitleaks"),
-
-		TelegramBotToken:      get("TELEGRAM_BOT_TOKEN", ""),
-		TelegramWebhookSecret: get("TELEGRAM_WEBHOOK_SECRET", ""),
 	}
 
 	// A relative DATA_DIR is relative to the .env file, so api and agents agree.
 	if !filepath.IsAbs(c.DataDir) && envDir != "" {
 		c.DataDir = filepath.Join(envDir, c.DataDir)
 	}
+	for _, k := range strings.Split(get("GROQ_API_KEYS", get("GROQ_API_KEY", "")), ",") {
+		if k = strings.TrimSpace(k); k != "" {
+			c.GroqAPIKeys = append(c.GroqAPIKeys, k)
+		}
+	}
+
 	abs, err := filepath.Abs(c.DataDir)
 	if err != nil {
 		return nil, fmt.Errorf("DATA_DIR: %w", err)
@@ -129,6 +129,12 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("SANDBOX_MODE must be docker or local")
 	}
 	return c, nil
+}
+
+// firstKey returns the first of a comma-separated list of API keys.
+func firstKey(list string) string {
+	k, _, _ := strings.Cut(list, ",")
+	return strings.TrimSpace(k)
 }
 
 func get(key, def string) string {

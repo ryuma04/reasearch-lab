@@ -69,7 +69,7 @@ func (s *Store) ChildRuns(ctx context.Context, parentID int64) ([]*Run, error) {
 	return s.queryRuns(ctx, `SELECT `+runCols+` FROM runs WHERE parent_run_id=$1 ORDER BY id`, parentID)
 }
 
-// ActiveRunsForUser lists unfinished main runs in workspaces the user owns or edits (for Telegram).
+// ActiveRunsForUser lists unfinished main runs in workspaces the user owns or edits (for voice commands).
 func (s *Store) ActiveRunsForUser(ctx context.Context, userID int64) ([]*Run, error) {
 	return s.queryRuns(ctx, `
 		SELECT `+prefixed("r", runCols)+` FROM runs r

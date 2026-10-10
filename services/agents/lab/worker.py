@@ -1,6 +1,6 @@
 """Job worker: consumes lab:jobs from Redis (pushed by the Go API) and runs them in threads.
 
-Job types: start_run, resume (after a checkpoint), retry, whatif, rescore.
+Job types: start_run, resume (after a checkpoint), retry, whatif.
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 import redis
 from langgraph.types import Command
 
-from . import bus, db, team, whatif
+from . import bus, db, whatif
 from .config import settings as cfg
 
 log = logging.getLogger("lab.worker")
@@ -70,8 +70,6 @@ class Worker:
                     self._graph_job(typ, run_id, job)
             elif typ == "whatif":
                 self._guard(run_id, lambda: whatif.run_question(run_id, job["question_id"], job["question"]), main=False)
-            elif typ == "rescore":
-                team.rescore(int(job["task_id"]))
             else:
                 log.warning("unknown job type %s", typ)
         except Exception:  # noqa: BLE001

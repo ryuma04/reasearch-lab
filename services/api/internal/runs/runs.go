@@ -1,5 +1,5 @@
 // Package runs handles runs: start, live stream (SSE), replay, checkpoints, agent controls,
-// results (scorecard, settings, metrics, map, gap analysis, what-ifs, files) and the team views.
+// results (scorecard, settings, metrics, map, gap analysis, what-ifs, files) and Lab Memory search.
 package runs
 
 import (
@@ -23,6 +23,12 @@ import (
 	"github.com/ryuma04/tapu-sena/services/api/internal/store"
 	"github.com/ryuma04/tapu-sena/services/api/internal/workspace"
 )
+
+// Agents are the fixed agents of the pipeline (services/agents/lab/steps.py).
+var Agents = map[string]bool{
+	"research.paper_reader": true, "research.source_finder": true, "coding.writer": true, "coding.reviewer": true,
+	"testing.designer": true, "testing.runner": true, "gap_detective": true, "whatif": true, "observer": true,
+}
 
 type Service struct {
 	cfg    *config.Config
@@ -298,7 +304,7 @@ func (s *Service) ResolveCheckpoint(w http.ResponseWriter, r *http.Request) erro
 	return nil
 }
 
-// Resolve is shared by the web API and the Telegram bot.
+// Resolve resolves a checkpoint (web and voice commands).
 func (s *Service) Resolve(ctx context.Context, runID int64, name string, body CheckpointResponse, userID int64, via string) (*store.Checkpoint, error) {
 	status := map[string]string{"approve": "approved", "edit": "edited", "reject": "rejected"}[body.Action]
 	if status == "" {
@@ -333,7 +339,7 @@ func (s *Service) Resolve(ctx context.Context, runID int64, name string, body Ch
 // ---------- agent controls ----------
 
 // POST /runs/{id}/agents/{agent}/action {"action": "...", "text": "..."}
-// actions: pause | resume | stop | retry | instruct | thumbs_up | thumbs_down
+// actions: pause | resume | stop | retry | instruct
 // Use agent "run" for whole-run controls; pause/stop always apply at the next safe step.
 func (s *Service) AgentAction(w http.ResponseWriter, r *http.Request) error {
 	run, _, err := s.loadRun(r, "editor")
@@ -359,14 +365,8 @@ func (s *Service) Act(ctx context.Context, run *store.Run, agent, action, text, 
 	if agent == "" {
 		agent = "run"
 	}
-	if agent != "run" {
-		ok, err := s.store.AgentExists(ctx, agent)
-		if err != nil {
-			return nil, err
-		}
-		if !ok {
-			return nil, httpx.Errorf(http.StatusNotFound, "unknown agent "+agent)
-		}
+	if agent != "run" && !Agents[agent] {
+		return nil, httpx.Errorf(http.StatusNotFound, "unknown agent "+agent)
 	}
 	finished := run.Status == "completed" || run.Status == "failed" || run.Status == "stopped" || run.Status == "rejected"
 	res := map[string]any{"run_id": run.ID, "agent": agent, "action": action}
@@ -421,27 +421,8 @@ func (s *Service) Act(ctx context.Context, run *store.Run, agent, action, text, 
 		}
 		s.event(ctx, run.ID, "researcher", "instruction_given", "Instruction for "+agent+": "+text, "Given via "+via,
 			map[string]any{"agent": agent})
-	case "thumbs_up", "thumbs_down":
-		if agent == "run" {
-			return nil, httpx.Errorf(http.StatusBadRequest, "feedback must target a specific agent")
-		}
-		fb := 1.0
-		if action == "thumbs_down" {
-			fb = -1.0
-		}
-		taskID, err := s.store.SetTaskFeedback(ctx, run.ID, agent, fb)
-		if err == store.ErrNotFound {
-			return nil, httpx.Errorf(http.StatusConflict, agent+" has no task in this run yet")
-		}
-		if err != nil {
-			return nil, err
-		}
-		_ = s.bus.Enqueue(ctx, map[string]any{"type": "rescore", "run_id": run.ID, "task_id": taskID})
-		s.event(ctx, run.ID, "researcher", "feedback", fmt.Sprintf("Researcher gave %s a %s", agent, strings.ReplaceAll(action, "_", " ")),
-			"Researcher feedback is 20% of the agent score", map[string]any{"agent": agent, "task_id": taskID})
-		res["task_id"] = taskID
 	default:
-		return nil, httpx.Errorf(http.StatusBadRequest, "action must be pause, resume, stop, retry, instruct, thumbs_up or thumbs_down")
+		return nil, httpx.Errorf(http.StatusBadRequest, "action must be pause, resume, stop, retry or instruct")
 	}
 	return res, nil
 }
@@ -540,18 +521,6 @@ func (s *Service) Map(w http.ResponseWriter, r *http.Request) error {
 // GET /runs/{id}/gap — Gap Detective findings.
 func (s *Service) Gap(w http.ResponseWriter, r *http.Request) error {
 	return s.jsonView(w, r, s.store.GapAnalyses)
-}
-
-// GET /runs/{id}/tasks — agent tasks with scores for this run.
-func (s *Service) Tasks(w http.ResponseWriter, r *http.Request) error {
-	return s.jsonView(w, r, s.store.AgentTasksForRun)
-}
-
-// GET /runs/{id}/decisions — Team Manager decisions for this run.
-func (s *Service) Decisions(w http.ResponseWriter, r *http.Request) error {
-	return s.jsonView(w, r, func(ctx context.Context, id int64) (json.RawMessage, error) {
-		return s.store.TeamDecisions(ctx, &id, 500)
-	})
 }
 
 // GET /runs/{id}/research — papers with their Claims Lists, plus the Research Brief markdown.
@@ -658,45 +627,6 @@ func (s *Service) File(w http.ResponseWriter, r *http.Request) error {
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	http.ServeFile(w, r, p)
-	return nil
-}
-
-// ---------- team ----------
-
-// GET /agents — the team with stages, scores per skill and current recipe version.
-func (s *Service) Agents(w http.ResponseWriter, r *http.Request) error {
-	data, err := s.store.Agents(r.Context())
-	if err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(data)
-	return nil
-}
-
-// GET /agents/{id}/history — recipe versions, tasks and Team Evolution decisions.
-func (s *Service) AgentHistory(w http.ResponseWriter, r *http.Request) error {
-	id, err := httpx.IDParam(r, "id")
-	if err != nil {
-		return err
-	}
-	data, err := s.store.AgentHistory(r.Context(), id)
-	if err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(data)
-	return nil
-}
-
-// GET /team/evolution — global Team Evolution timeline.
-func (s *Service) Evolution(w http.ResponseWriter, r *http.Request) error {
-	data, err := s.store.TeamDecisions(r.Context(), nil, 300)
-	if err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(data)
 	return nil
 }
 

@@ -60,7 +60,7 @@ func New(ctx context.Context, url string, st *store.Store) (*Bus, error) {
 	return &Bus{Redis: rdb, store: st, subs: map[int64]map[chan store.Event]struct{}{}, parents: map[int64]int64{}}, nil
 }
 
-// OnEvent registers a hook called for every saved event (e.g. Telegram notifications).
+// OnEvent registers a hook called for every saved event (e.g. notifications).
 func (b *Bus) OnEvent(fn func(context.Context, store.Event)) { b.hooks = append(b.hooks, fn) }
 
 // Enqueue sends a job to the Python worker.

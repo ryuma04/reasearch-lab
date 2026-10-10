@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import xml.etree.ElementTree as ET
 
-from . import api, bus, db, llm, team
+from . import api, bus, db, llm, steps
 from .observer import edge, node
 from .project import fmt, load_settings, pdir, write_files
 
@@ -62,10 +62,10 @@ def claims_for_run(run_id: int) -> list[dict]:
                    JOIN runs r ON r.workspace_id=p.workspace_id WHERE r.id=%s ORDER BY c.id""", (run_id,))
 
 
-def design_tests(run_id: int, plan: dict) -> list[str]:
+def design_tests(run_id: int) -> list[str]:
     root = pdir(run_id)
-    slug = plan["assignments"].get("design_tests", "testing.designer")
-    with team.task(run_id, slug, "design_tests", "Writing correctness tests and one claim test per paper claim",
+    slug = "testing.designer"
+    with steps.step(run_id, slug, "Writing correctness tests and one claim test per paper claim",
                    "Claim tests compare our numbers with the paper's, with a tolerance") as t:
         claims = claims_for_run(run_id)
         expected = [{"metric_name": c["metric_name"], "value": c["value"], "tolerance": c["tolerance"],
@@ -75,7 +75,7 @@ def design_tests(run_id: int, plan: dict) -> list[str]:
             generated = None
             if llm.available():
                 code = "\n".join(p.read_text(encoding="utf-8")[:6000] for p in (root / "src").glob("*.py"))
-                res = llm.chat("planner", team.instructions(slug) + " Write pytest correctness tests (no training, fast, "
+                res = llm.chat("planner", steps.instructions(slug) + " Write pytest correctness tests (no training, fast, "
                                "CPU) for this code. Import modules from src via sys.path. Output only Python code.",
                                code, max_tokens=3000)
                 if res and "def test_" in res.text:
@@ -83,7 +83,6 @@ def design_tests(run_id: int, plan: dict) -> list[str]:
             files["tests/test_correctness.py"] = generated or SMOKE_TEST
         written = write_files(root, files)
         tests = sorted(p.relative_to(root).as_posix() for p in (root / "tests").glob("test_*.py"))
-        t.outcome = 1.0
         t.notes = f"{len(expected)} claim tests, files: {', '.join(tests)}"
         nodes = [node(f"test:{tf}", "test", tf, "waiting") for tf in tests]
         edges_ = [edge(f"claim:{c['id']}", "test:tests/test_claims.py", "tested by") for c in claims]
@@ -92,17 +91,15 @@ def design_tests(run_id: int, plan: dict) -> list[str]:
     return tests
 
 
-def run_tests(run_id: int, plan: dict) -> dict:
-    slug = plan["assignments"].get("run_tests", "testing.runner")
+def run_tests(run_id: int) -> dict:
+    slug = "testing.runner"
     root = pdir(run_id)
-    with team.task(run_id, slug, "run_tests", "Running all tests in the sandbox (offline)", "") as t:
+    with steps.step(run_id, slug, "Running all tests in the sandbox (offline)", "") as t:
         res = api.sandbox_exec(run_id, "test",
                                "PYTHONPATH=src python -m pytest -q tests -p no:cacheprovider --junitxml=results/junit.xml",
                                600, slug, collect_metrics=False)
         t.sandbox_seconds += res.seconds
         summary = _junit(root / "results" / "junit.xml")
-        correctness_failed = [c for c in summary["cases"] if c["status"] == "failed" and "test_claims" not in c["file"]]
-        t.outcome = 1.0 if summary["total"] and not correctness_failed else 0.5
         t.notes = f"{summary['passed']} passed, {summary['failed']} failed, {summary['skipped']} skipped"
         nodes = [node(f"test:{f}", "test", f, "problem" if any(c["file"] == f and c["status"] == "failed" for c in summary["cases"])
                       else "done") for f in {c["file"] for c in summary["cases"]}]
@@ -136,12 +133,12 @@ def _junit(path) -> dict:
     return out
 
 
-def compute_scorecard(run_id: int, plan: dict) -> list[dict]:
+def compute_scorecard(run_id: int) -> list[dict]:
     """Match / Close / Different for every claim, using only database numbers."""
-    slug = plan["assignments"].get("compare_claims", "testing.runner")
+    slug = "testing.runner"
     compute_changes = [s for s in load_settings(run_id) if s["source"] in ("compute_change", "researcher")]
     rows = []
-    with team.task(run_id, slug, "compare_claims", "Filling the Claim Scorecard: our numbers vs the paper's", "") as t:
+    with steps.step(run_id, slug, "Filling the Claim Scorecard: our numbers vs the paper's", "") as t:
         for c in claims_for_run(run_id):
             m = db.q1("SELECT * FROM metrics WHERE run_id=%s AND name=%s ORDER BY id DESC LIMIT 1", (run_id, c["metric_name"]))
             if not m:
@@ -174,6 +171,5 @@ def compute_scorecard(run_id: int, plan: dict) -> list[dict]:
                             "map_nodes": [node(f"claim:{c['id']}", "claim", None, colour, result=status)],
                             "map_edges": [edge("result:metrics", f"claim:{c['id']}", status)] if m else []})
         n_match = sum(r["status"] == "match" for r in rows)
-        t.outcome = 1.0
         t.notes = f"{n_match} of {len(rows)} claims matched"
     return rows

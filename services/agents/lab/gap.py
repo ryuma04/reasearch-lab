@@ -8,8 +8,7 @@ through the Go proof checker.
 """
 from __future__ import annotations
 
-from . import api, bus, db, llm, recipes, team
-from .config import settings as cfg
+from . import api, bus, db, llm, recipes, steps
 from .observer import edge, node
 from .project import create_child_run, finish_run, fmt, latest_metric, load_settings, set_config_values
 
@@ -56,11 +55,10 @@ def differences(run_id: int, brief: dict) -> list[dict]:
     return diffs
 
 
-def investigate(run_id: int, claim: dict, brief: dict, plan: dict, budget: str, timeout: int) -> dict:
-    slug = plan["assignments"].get("explain_gap") or team.assign(run_id, "explain_gap", f"the claim '{claim['description']}' is Different")
-    plan["assignments"]["explain_gap"] = slug
+def investigate(run_id: int, claim: dict, brief: dict, budget: str, timeout: int) -> dict:
+    slug = "gap_detective"
     base = latest_metric(run_id, claim["metric_name"])
-    with team.task(run_id, slug, "explain_gap", f"Testing why '{claim['description']}' differs from the paper",
+    with steps.step(run_id, slug, f"Testing why '{claim['description']}' differs from the paper",
                    "We answer with evidence from small experiments, not guesses") as t:
         diffs = differences(run_id, brief)
         bus.emit(run_id, slug, "gap_differences",
@@ -92,7 +90,6 @@ def investigate(run_id: int, claim: dict, brief: dict, plan: dict, budget: str, 
                db.J([{k: e.get(k) for k in ("setting", "label", "child_run_id", "metric_id", "value", "test_value")} for e in experiments]),
                explanation))
         db.ex("UPDATE scorecard_entries SET explanation=%s WHERE run_id=%s AND claim_id=%s", (explanation, run_id, claim["id"]))
-        t.outcome = 1.0 if any(e["value"] is not None for e in experiments) else 0.3
         t.notes = f"{len(experiments)} experiments"
         bus.emit(run_id, slug, "gap_explained", explanation[:1500], "Each reason was tested with its own small experiment",
                  {"claim_id": claim["id"]})

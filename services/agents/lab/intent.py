@@ -1,5 +1,5 @@
 """Team Manager understanding a researcher's command (typed, or voice transcribed by Whisper),
-plus a plain status summary. Used by the Telegram bot and the mobile voice button."""
+plus a plain status summary. Used by the mobile voice/command button."""
 from __future__ import annotations
 
 import re

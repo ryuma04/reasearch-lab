@@ -25,7 +25,7 @@ def test_error_signature_is_stable_across_paths_and_numbers():
 def test_hash_embedding_similarity():
     v1 = memory._hash_embed("numpy 2.0 breaks old code pin numpy")
     v2 = memory._hash_embed("pin numpy because numpy 2.0 breaks code")
-    v3 = memory._hash_embed("telegram voice command approval")
+    v3 = memory._hash_embed("github push approval checkpoint")
     dot = lambda x, y: sum(p * q for p, q in zip(x, y))  # noqa: E731
     assert len(v1) == memory.DIM
     assert dot(v1, v2) > dot(v1, v3)
@@ -50,7 +50,8 @@ def test_config_labels_every_setting(tmp_path):
     assert project._typed("0.05") == 0.05 and project._typed("mnist") == "mnist"
 
 
-def test_whatif_parse_without_ai():
+def test_whatif_parse_without_ai(monkeypatch):
+    monkeypatch.setattr(llm, "available", lambda: False)
     names = [s["name"] for s in distillation.settings("quick")]
     b = whatif.parse("What if the temperature is 2, 5, 10 or 20?", names)
     assert [x["change"]["distill.temperature"] for x in b] == [2, 5, 10, 20]
@@ -60,7 +61,8 @@ def test_whatif_parse_without_ai():
     assert b[0]["change"] == {"model.student_hidden": 100}
 
 
-def test_intent_rules_without_ai():
+def test_intent_rules_without_ai(monkeypatch):
+    monkeypatch.setattr(llm, "available", lambda: False)
     runs = [{"id": 7, "pending_checkpoint": "plan"}]
     assert intent.understand("How is the run going?", runs)["action"] == "status"
     i = intent.understand("Try temperature 5 as a new branch", runs)

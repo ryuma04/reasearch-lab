@@ -44,6 +44,9 @@ class Settings:
     groq_api_key: str
     gemini_api_key: str
     openrouter_api_key: str
+    groq_api_keys: tuple
+    gemini_api_keys: tuple
+    gemini_models: tuple
     model_planner: str
     model_reviewer: str
     model_writer: str
@@ -51,6 +54,17 @@ class Settings:
     model_gemini: str
 
     max_repair_attempts: int = 5
+
+
+def _keys(list_var: str, single_var: str) -> tuple:
+    """Several API keys (comma separated) for rotation; falls back to the single-key variable."""
+    raw = _get(list_var) or _get(single_var)
+    seen, out = set(), []
+    for k in (x.strip() for x in raw.split(",")):
+        if k and k not in seen:
+            seen.add(k)
+            out.append(k)
+    return tuple(out)
 
 
 def load() -> Settings:
@@ -67,14 +81,17 @@ def load() -> Settings:
         internal_token=_get("INTERNAL_TOKEN", ""),
         port=int(_get("AGENTS_PORT", "8001")),
         concurrency=int(_get("WORKER_CONCURRENCY", "3")),
-        groq_api_key=_get("GROQ_API_KEY"),
-        gemini_api_key=_get("GEMINI_API_KEY"),
+        groq_api_key=(_keys("GROQ_API_KEYS", "GROQ_API_KEY") or ("",))[0],
+        gemini_api_key=(_keys("GEMINI_API_KEYS", "GEMINI_API_KEY") or ("",))[0],
+        groq_api_keys=_keys("GROQ_API_KEYS", "GROQ_API_KEY"),
+        gemini_api_keys=_keys("GEMINI_API_KEYS", "GEMINI_API_KEY"),
+        gemini_models=tuple(m.strip() for m in _get("GEMINI_MODELS", _get("GEMINI_MODEL", "gemini-3-flash-preview")).split(",") if m.strip()),
         openrouter_api_key=_get("OPENROUTER_API_KEY"),
         model_planner=_get("GROQ_MODEL_PLANNER", "openai/gpt-oss-120b"),
-        model_reviewer=_get("GROQ_MODEL_REVIEWER", "qwen/qwen3-32b"),
-        model_writer=_get("GROQ_MODEL_WRITER", "llama-3.3-70b-versatile"),
-        model_fast=_get("GROQ_MODEL_FAST", "llama-3.1-8b-instant"),
-        model_gemini=_get("GEMINI_MODEL", "gemini-2.5-flash"),
+        model_reviewer=_get("GROQ_MODEL_REVIEWER", "qwen/qwen3.8-27b"),
+        model_writer=_get("GROQ_MODEL_WRITER", "openai/gpt-oss-20b"),
+        model_fast=_get("GROQ_MODEL_FAST", "openai/gpt-oss-20b"),
+        model_gemini=_get("GEMINI_MODELS", _get("GEMINI_MODEL", "gemini-3-flash-preview")).split(",")[0].strip(),
         max_repair_attempts=int(_get("MAX_REPAIR_ATTEMPTS", "5")),
     )
 

@@ -10,7 +10,7 @@ import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
 
-from . import api, bus, db, llm, team
+from . import api, bus, db, llm, steps
 from .coding import BUDGET_SECONDS
 from .observer import edge, node
 from .project import create_child_run, finish_run, fmt, load_settings, run_row, set_config_values
@@ -64,21 +64,20 @@ def run_question(run_id: int, question_id: str, question: str) -> None:
     metric = parent["primary_metric"]
     higher = parent["primary_higher_is_better"]
     names = [s["name"] for s in load_settings(run_id)]
-    slug = "manager"  # the Team Manager plans branches
+    slug = "whatif"
     db.ex("DELETE FROM whatif_branches WHERE run_id=%s AND question_id=%s AND label='planning'", (run_id, question_id))
 
-    with team.task(run_id, slug, "plan_team", f"Planning what-if branches for: {question}",
+    with steps.step(run_id, slug, f"Planning what-if branches for: {question}",
                    "Each branch is a small experiment that changes only what the question asks") as t:
         branches = parse(question, names)
         if not branches:
-            t.outcome, t.notes = 0.0, "could not turn the question into settings changes"
+            t.notes = "could not turn the question into settings changes"
             db.ex("""INSERT INTO whatif_branches (run_id, question_id, question, label, status, reason)
                      VALUES (%s,%s,%s,'not understood','failed','Could not map the question to settings of this project')""",
                   (run_id, question_id, question))
             bus.emit(run_id, slug, "whatif_failed", f"Could not turn '{question}' into experiments",
                      "No setting of this project matches the question")
             return
-        t.outcome = 1.0
         t.notes = f"{len(branches)} branches"
 
     rows = []
@@ -89,7 +88,7 @@ def run_question(run_id: int, question_id: str, question: str) -> None:
                            VALUES (%s,%s,%s,%s,%s,%s,'running') RETURNING id""",
                         (run_id, child, question_id, question, b["label"], db.J(b["change"])))
         rows.append({"id": bid, "child": child, **b, "value": None, "metric_id": None})
-        bus.emit(child, "manager", "whatif_branch", f"Branch '{b['label']}': " + ", ".join(f"{k}={v}" for k, v in b["change"].items()),
+        bus.emit(child, "whatif", "whatif_branch", f"Branch '{b['label']}': " + ", ".join(f"{k}={v}" for k, v in b["change"].items()),
                  "", {"branch_id": bid, "parent_run_id": run_id,
                       "map_nodes": [node(f"whatif:{child}", "whatif", b["label"], "working")],
                       "map_edges": [edge("result:metrics", f"whatif:{child}", "what if")]})
@@ -131,7 +130,7 @@ def run_question(run_id: int, question_id: str, question: str) -> None:
                   f"{fmt(keep[-1]['value'])} for the weakest kept branch)")
         db.ex("UPDATE whatif_branches SET status='stopped_early', reason=%s WHERE id=%s", (reason, r["id"]))
         finish_run(r["child"], "stopped", "stopped early by successive halving")
-        bus.emit(r["child"], "manager", "whatif_stopped", f"Branch '{r['label']}' {reason}", "Successive halving saves compute",
+        bus.emit(r["child"], "whatif", "whatif_stopped", f"Branch '{r['label']}' {reason}", "Successive halving saves compute",
                  {"branch_id": r["id"], "map_nodes": [node(f"whatif:{r['child']}", "whatif", r["label"], "waiting", stopped=True)]})
 
     # Round 2: survivors with the full budget.
@@ -151,10 +150,9 @@ def run_question(run_id: int, question_id: str, question: str) -> None:
         msg = (f"What-if '{question}': best branch '{best['label']}' with {metric} = {fmt(best['value'])} "
                f"(main run: {fmt(base['value']) if base else 'n/a'}); {len(rows) - len(keep)} branch(es) stopped early")
         db.ex("UPDATE whatif_branches SET reason='best branch' WHERE id=%s", (best["id"],))
-        bus.emit(run_id, "manager", "whatif_finished", msg, "Numbers come from each branch's metrics.json",
+        bus.emit(run_id, "whatif", "whatif_finished", msg, "Numbers come from each branch's metrics.json",
                  {"question_id": question_id, "best_branch_id": best["id"], "metric_id": best["metric_id"],
                   "map_nodes": [node(f"whatif:{r['child']}", "whatif", r["label"], "done", best=(r is best)) for r in final]})
     else:
-        bus.emit(run_id, "manager", "whatif_finished", f"What-if '{question}': no branch produced a result", "",
+        bus.emit(run_id, "whatif", "whatif_finished", f"What-if '{question}': no branch produced a result", "",
                  {"question_id": question_id})
-    team.evolve(run_id)

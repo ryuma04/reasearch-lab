@@ -91,71 +91,12 @@ func (s *Store) WhatIfBranches(ctx context.Context, runID int64) (json.RawMessag
 		WHERE b.run_id=$1 ORDER BY b.id`, runID)
 }
 
-func (s *Store) AgentTasksForRun(ctx context.Context, runID int64) (json.RawMessage, error) {
-	return s.QueryJSON(ctx, `
-		SELECT t.id, t.agent_id, a.slug, a.name, t.skill, t.outcome, t.feedback, t.tokens,
-			t.sandbox_seconds, t.wasted_tries, t.score, t.notes, t.created_at
-		FROM agent_tasks t JOIN agents a ON a.id = t.agent_id
-		WHERE t.run_id=$1 ORDER BY t.id`, runID)
-}
-
-func (s *Store) TeamDecisions(ctx context.Context, runID *int64, limit int) (json.RawMessage, error) {
-	return s.QueryJSON(ctx, `
-		SELECT d.id, d.run_id, d.decision, d.agent_ids, d.skill, d.reason, d.status, d.created_at,
-			(SELECT COALESCE(json_agg(a.slug), '[]'::json) FROM agents a WHERE a.id = ANY(d.agent_ids)) AS agents
-		FROM team_decisions d WHERE ($1::bigint IS NULL OR d.run_id = $1)
-		ORDER BY d.id DESC LIMIT $2`, runID, limit)
-}
-
-func (s *Store) Agents(ctx context.Context) (json.RawMessage, error) {
-	return s.QueryJSON(ctx, `
-		SELECT a.id, a.slug, a.name, a.kind, a.parent_slug, a.template, a.stage, a.avg_score, a.tasks_count,
-			a.created_at, v.version, v.model, v.skill_tags, v.tools,
-			(SELECT COALESCE(json_object_agg(skill, avg), '{}'::json) FROM (
-				SELECT skill, round(avg(score)::numeric, 3) AS avg FROM agent_tasks
-				WHERE agent_id = a.id AND score IS NOT NULL GROUP BY skill) ss) AS skill_scores
-		FROM agents a LEFT JOIN agent_versions v ON v.id = a.current_version_id
-		ORDER BY (a.stage = 'retired'), a.kind, a.slug`)
-}
-
-func (s *Store) AgentHistory(ctx context.Context, agentID int64) (json.RawMessage, error) {
-	return s.QueryJSONOne(ctx, `
-		SELECT a.id, a.slug, a.name, a.kind, a.stage, a.avg_score, a.tasks_count,
-			(SELECT COALESCE(json_agg(v ORDER BY v.version), '[]'::json) FROM (
-				SELECT id, version, instructions, tools, model, skill_tags, created_reason, created_at
-				FROM agent_versions WHERE agent_id = a.id) v) AS versions,
-			(SELECT COALESCE(json_agg(t ORDER BY t.id DESC), '[]'::json) FROM (
-				SELECT id, run_id, skill, outcome, feedback, tokens, sandbox_seconds, wasted_tries, score, notes, created_at
-				FROM agent_tasks WHERE agent_id = a.id ORDER BY id DESC LIMIT 100) t) AS tasks,
-			(SELECT COALESCE(json_agg(d ORDER BY d.id DESC), '[]'::json) FROM (
-				SELECT id, run_id, decision, skill, reason, status, created_at
-				FROM team_decisions WHERE a.id = ANY(agent_ids)) d) AS decisions
-		FROM agents a WHERE a.id=$1`, agentID)
-}
-
 func (s *Store) MemoryTextSearch(ctx context.Context, q, kind string, limit int) (json.RawMessage, error) {
 	return s.QueryJSON(ctx, `
 		SELECT id, kind, text, details, times_used, success_rate, source_run_id, created_at
 		FROM memory_items
 		WHERE ($2 = '' OR kind = $2) AND ($1 = '' OR text ILIKE '%' || $1 || '%')
 		ORDER BY times_used DESC, id DESC LIMIT $3`, q, kind, limit)
-}
-
-// SetTaskFeedback records researcher thumbs up/down on the latest task of an agent in a run.
-func (s *Store) SetTaskFeedback(ctx context.Context, runID int64, agentSlug string, feedback float64) (int64, error) {
-	var id int64
-	err := s.Pool.QueryRow(ctx, `
-		UPDATE agent_tasks SET feedback=$3 WHERE id = (
-			SELECT t.id FROM agent_tasks t JOIN agents a ON a.id = t.agent_id
-			WHERE t.run_id=$1 AND a.slug=$2 ORDER BY t.id DESC LIMIT 1)
-		RETURNING id`, runID, agentSlug, feedback).Scan(&id)
-	return id, notFound(err)
-}
-
-func (s *Store) AgentExists(ctx context.Context, slug string) (bool, error) {
-	var ok bool
-	err := s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM agents WHERE slug=$1)`, slug).Scan(&ok)
-	return ok, err
 }
 
 // ---------- what-if ----------

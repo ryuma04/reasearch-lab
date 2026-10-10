@@ -28,7 +28,7 @@ class RunStopped(Exception):
 
 def emit(run_id: int, agent: str, type_: str, message: str, why: str = "",
          links: dict | None = None, cost: dict | None = None) -> None:
-    """Send one event. Every live feature (board, map, Telegram, replay) is built from these."""
+    """Send one event. Every live feature (board, map, replay) is built from these."""
     ev = {
         "run_id": int(run_id),
         "time": datetime.now(timezone.utc).isoformat(),

@@ -70,7 +70,7 @@ func (s *Service) Handle(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// Start validates and launches a push in the background. Shared by web and Telegram.
+// Start validates and launches a push in the background. Used by the web API.
 func (s *Service) Start(ctx context.Context, run *store.Run, userID int64, repo, via string) (int64, error) {
 	if run.Kind != "main" {
 		return 0, httpx.Errorf(http.StatusBadRequest, "push the main run; what-if branches are included automatically")

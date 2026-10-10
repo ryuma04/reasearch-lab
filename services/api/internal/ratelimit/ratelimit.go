@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/redis/go-redis/v9"
 
@@ -22,12 +23,13 @@ type Limit struct {
 // Conservative defaults, kept below the published free limits. Override per model with
 // RATE_LIMITS="groq:llama-3.1-8b-instant=30/14000,gemini:*=10/250".
 var defaults = map[string]Limit{
-	"groq:*":                       {PerMinute: 28, PerDay: 900},
-	"groq:llama-3.1-8b-instant":    {PerMinute: 28, PerDay: 14000},
-	"groq:llama-3.3-70b-versatile": {PerMinute: 28, PerDay: 950},
-	"groq:whisper-large-v3-turbo":  {PerMinute: 18, PerDay: 1900},
-	"gemini:*":                     {PerMinute: 9, PerDay: 240},
-	"openrouter:*":                 {PerMinute: 18, PerDay: 190},
+	"groq:*":                      {PerMinute: 28, PerDay: 950},
+	"groq:openai/gpt-oss-20b":     {PerMinute: 28, PerDay: 950},
+	"groq:openai/gpt-oss-120b":    {PerMinute: 28, PerDay: 950},
+	"groq:qwen/qwen3.8-27b":       {PerMinute: 55, PerDay: 950},
+	"groq:whisper-large-v3-turbo": {PerMinute: 18, PerDay: 1900},
+	"gemini:*":                    {PerMinute: 9, PerDay: 240},
+	"openrouter:*":                {PerMinute: 18, PerDay: 190},
 }
 
 type Service struct {
@@ -54,6 +56,8 @@ func New(rdb *redis.Client, override string) *Service {
 }
 
 func (s *Service) limitFor(provider, model string) Limit {
+	// Each API key has its own counter ("groq0", "groq1", ...) but shares the provider's limits.
+	provider = strings.TrimRightFunc(provider, unicode.IsDigit)
 	if l, ok := s.limits[provider+":"+model]; ok {
 		return l
 	}
