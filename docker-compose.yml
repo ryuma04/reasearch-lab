@@ -1,0 +1,80 @@
+name: tapu-sena
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: lab
+      POSTGRES_PASSWORD: lab
+      POSTGRES_DB: lab
+    ports:
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lab -d lab"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # n8n is only reachable inside the private compose network (no host port by default).
+  # Uncomment the ports block once to import n8n/github-push.json, then comment it again.
+  n8n:
+    image: n8nio/n8n:latest
+    environment:
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      EXECUTIONS_DATA_SAVE_ON_SUCCESS: none
+      EXECUTIONS_DATA_SAVE_ON_ERROR: none
+      EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS: "false"
+    # ports:
+    #   - "5678:5678"
+    volumes:
+      - n8ndata:/home/node/.n8n
+    profiles: ["full"]
+
+  api:
+    build: ./services/api
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://lab:lab@postgres:5432/lab?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      DATA_DIR: /data
+      N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL:-http://n8n:5678/webhook/github-push}
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    profiles: ["full"]
+
+  agents:
+    build: ./services/agents
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://lab:lab@postgres:5432/lab?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      DATA_DIR: /data
+      API_INTERNAL_URL: http://api:8080
+    volumes:
+      - ./data:/data
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    profiles: ["full"]
+
+volumes:
+  pgdata:
+  n8ndata:
