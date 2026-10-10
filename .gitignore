@@ -1,0 +1,19 @@
+.env
+.env*.local
+data/
+*.exe
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+node_modules/
+.DS_Store
+
+# sandbox test data and local builds
+backend/sandbox-testdata/
+backend/bin/
+frontend/.next-*/
+apps/
+*.log
+backend/out.txt

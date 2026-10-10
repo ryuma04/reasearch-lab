@@ -1,0 +1,2 @@
+fastembed>=0.5
+docling>=2.0

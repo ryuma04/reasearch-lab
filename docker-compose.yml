@@ -1,0 +1,68 @@
+name: tapu-sena
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: lab
+      POSTGRES_PASSWORD: lab
+      POSTGRES_DB: lab
+    ports:
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lab -d lab"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://lab:lab@postgres:5432/lab?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      DATA_DIR: /data
+      AGENTS_URL: http://agents:8001
+      # Sandbox containers are started on the host Docker; bind mounts need the host path of ./data
+      SANDBOX_HOST_DATA_DIR: ${HOST_DATA_DIR:-}
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    profiles: ["full"]
+
+  agents:
+    build: ./agents
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://lab:lab@postgres:5432/lab?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      DATA_DIR: /data
+      API_INTERNAL_URL: http://api:8080
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./data:/data
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    profiles: ["full"]
+
+volumes:
+  pgdata:

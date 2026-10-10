@@ -1,0 +1,15 @@
+fastapi==0.143.0
+uvicorn[standard]==0.54.0
+httpx==0.28.1
+redis==8.1.0
+psycopg[binary]==3.3.6
+psycopg-pool==3.3.3
+langgraph==1.2.14
+langgraph-checkpoint-postgres==3.1.2
+pymupdf==1.28.2
+pydantic==2.14.0
+pytest==8.4.2
+# Optional, better quality (install with requirements-extra.txt):
+#   fastembed  -> BGE embeddings for Lab Memory (falls back to hashing embeddings)
+#   docling    -> structured PDF reading (falls back to PyMuPDF)
+huggingface_hub==0.36.2
