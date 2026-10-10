@@ -2,10 +2,10 @@
 
 A fixed pipeline of AI agents (Research → Coding → Testing → Gap Detective, plus What-If) reproduces an ML paper's key result on a laptop, checks every claim
 against the paper with proof, explains differences with experiments, runs what-if branches
-and pushes everything to the researcher's GitHub. See `allaboutourproject.md` for the full plan.
+and pushes everything to the researcher's GitHub. See `docs/allaboutourproject.md` for the full plan.
 
 ```
-                 ┌──────────────── Go API (services/api, :8080) ─────────────────┐
+                 ┌──────────────── Go API (backend/, :8080) ──────────────────┐
  browser/phone ─▶│ auth · workspaces · uploads · runs · SSE · checkpoints ·      │──▶ GitHub (OAuth, push)
  phone (web) ───▶│ scorecard · sandbox · proof checker · rate limiter · push ·   │──▶ n8n webhook ─▶ GitHub
                  │ voice commands · share links                                  │
@@ -13,7 +13,7 @@ and pushes everything to the researcher's GitHub. See `allaboutourproject.md` fo
        HTTP (sync)  │   Redis       │ lab:jobs ▼          │ docker run      │ /internal/* (sandbox,
   health, memory,   │   lab:events ▲│                     ▼                 │  proof, rate limit)
   intent, summary   ▼               │               sandbox container       │
-                 ┌──────────── FastAPI agents (services/agents, :8001) ───────┴───┐
+                 ┌──────────── FastAPI agents (agents/, :8001) ───────────────┴───┐
                  │ worker (LangGraph): Research · Coding · Testing · Observer     │──▶ Groq / Gemini
                  │ Gap Detective · What-If · Lab Memory                           │──▶ arXiv, Semantic Scholar, GitHub
                  └──────────────────────────── PostgreSQL + pgvector ─────────────┘
@@ -35,14 +35,14 @@ Prerequisites: Docker Desktop, Go 1.25+, Python 3.11+.
 ```bash
 cp .env.example .env              # then set TOKEN_ENCRYPTION_KEY, SESSION_SECRET, INTERNAL_TOKEN
 docker compose up -d postgres redis
-docker build -t tapu-sena/sandbox-python:latest sandbox-images/python   # once, ~3 GB (PyTorch CPU)
+docker build -t tapu-sena/sandbox-python:latest infra/sandbox-images/python   # once, ~3 GB (PyTorch CPU)
 
 # Go API
-cd services/api && go run ./cmd/server
+cd backend && go run ./cmd/server
 
 # Agent service (new terminal)
-python -m venv .venv && .venv/Scripts/pip install -r services/agents/requirements.txt   # (bin/ on macOS/Linux)
-cd services/agents && ../../.venv/Scripts/python -m uvicorn app:app --port 8001
+python -m venv .venv && .venv/Scripts/pip install -r agents/requirements.txt   # (bin/ on macOS/Linux)
+cd agents && ../.venv/Scripts/python -m uvicorn app:app --port 8001
 
 curl localhost:8080/healthz       # every connection: db, redis, agents, docker, sandbox image, n8n, credentials
 ```
@@ -99,6 +99,6 @@ SSE event (also the Run Replay format):
 ## Tests
 
 ```bash
-cd services/api && go test ./...
-cd services/agents && ../../.venv/Scripts/python -m pytest -q
+cd backend && go test ./...
+cd agents && ../.venv/Scripts/python -m pytest -q
 ```

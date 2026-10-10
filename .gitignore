@@ -1,4 +1,5 @@
 .env
+.env*.local
 data/
 *.exe
 __pycache__/
@@ -7,3 +8,4 @@ __pycache__/
 venv/
 .pytest_cache/
 node_modules/
+.DS_Store

@@ -1,0 +1,181 @@
+@import "tailwindcss";
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   "Soft Clay & Calm Bento" (Pop Sticker Edition) — tokens from DESIGN.md §3–§16.
+   Do not add colours outside this palette.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+@theme {
+  /* Base surfaces & ink (§3.1) */
+  --color-canvas: #f5f1e8;
+  --color-canvas-cool: #eef1f6;
+  --color-ink: #1c1b2b;
+  --color-ink-soft: #3a3850;
+  --color-muted: #625f78;
+  --color-faint: #9794ab;
+  --color-line: #e8e2d6;
+  --color-line-cool: #e3e7ef;
+  --color-pill: #1c1b22;
+
+  /* Chromatic triad tones (§3.2) */
+  --color-purple: #7b5cf0;
+  --color-purple-deep: #5a3dd4;
+  --color-lavender: #c6b5f6;
+  --color-lavender-soft: #ece5fe;
+  --color-sun: #fad47f;
+  --color-sun-soft: #fef3d6;
+  --color-sun-deep: #a86f00;
+  --color-coral: #f08a6c;
+  --color-coral-soft: #fde3d9;
+  --color-coral-deep: #c4502f;
+  --color-mint: #d0e8ba;
+  --color-mint-soft: #e8f4dc;
+  --color-mint-deep: #3f8a2e;
+  --color-sky: #c4def8;
+  --color-sky-soft: #e3effc;
+  --color-sky-deep: #2f6fbf;
+  --color-pink: #f9cbc9;
+  --color-pink-soft: #fde4e2;
+  --color-pink-deep: #c9544f;
+  --color-cream: #fdeedc;
+  --color-star: #ffc23d;
+
+  /* Semantic feedback (§3.3) */
+  --color-success: #23864b;
+  --color-success-soft: #dcf2e4;
+  --color-warning: #a4660a;
+  --color-warning-soft: #fff0d4;
+  --color-danger: #c93535;
+  --color-danger-soft: #fde2e2;
+  --color-info: #2f6fbf;
+  --color-info-soft: #e3effc;
+
+  /* Fonts (§4.1) — variables provided by next/font in layout.tsx */
+  --font-display: var(--font-fraunces), ui-serif, Georgia, serif;
+  --font-sans: var(--font-poppins), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Radii (§16) */
+  --radius-xl2: 24px;
+  --radius-xl3: 28px;
+  --radius-xl4: 32px;
+  --radius-xl5: 44px;
+
+  /* Shadows (§16) */
+  --shadow-clay: 0 18px 34px -16px rgb(62 44 130 / 0.26), inset 0 -6px 12px rgb(40 22 96 / 0.07), inset 0 6px 12px rgb(255 255 255 / 0.9);
+  --shadow-clay-sm: 0 10px 20px -12px rgb(62 44 130 / 0.3), inset 0 -3px 6px rgb(40 22 96 / 0.06), inset 0 3px 6px rgb(255 255 255 / 0.85);
+  --shadow-clay-lg: 0 30px 60px -24px rgb(62 44 130 / 0.32), inset 0 -8px 16px rgb(40 22 96 / 0.07), inset 0 8px 16px rgb(255 255 255 / 0.9);
+  --shadow-pop: 3px 3px 0 #1c1b2b;
+  --shadow-pop-lg: 5px 5px 0 #1c1b2b;
+  --shadow-pop-purple: 3px 3px 0 #7b5cf0;
+  --shadow-pop-purple-lg: 4px 4px 0 #7b5cf0;
+  --shadow-soft: 0 1px 2px rgb(28 27 43 / 0.05), 0 8px 24px -14px rgb(28 27 43 / 0.16);
+  --shadow-float: 0 24px 48px -18px rgb(28 27 43 / 0.35);
+
+  /* Motion (§15) */
+  --ease-clay: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-shimmer: shimmer 1.6s linear infinite;
+  --animate-marquee: marquee 38s linear infinite;
+  --animate-wiggle: wiggle 2.4s ease-in-out infinite;
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+  }
+  @keyframes shimmer {
+    0% { background-position: -400px 0; }
+    100% { background-position: 400px 0; }
+  }
+  @keyframes marquee {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+  @keyframes wiggle {
+    0%, 100% { transform: rotate(-3deg); }
+    50% { transform: rotate(3deg); }
+  }
+}
+
+/* Canvas patterns (§6.1) */
+@utility bg-dots {
+  background-color: var(--color-canvas);
+  background-image: radial-gradient(rgb(28 27 43 / 0.09) 1.1px, transparent 1.2px);
+  background-size: 22px 22px;
+}
+@utility bg-dots-cool {
+  background-color: var(--color-canvas-cool);
+  background-image: radial-gradient(rgb(28 27 43 / 0.05) 1px, transparent 1.1px);
+  background-size: 24px 24px;
+}
+@utility bg-speed {
+  background-image: repeating-linear-gradient(0deg, rgb(0 0 0 / 0.035) 0 2px, transparent 2px 7px);
+}
+/* Skeleton shimmer (§11.3) */
+@utility skeleton {
+  background: linear-gradient(90deg, #ece7dd 0, #f7f3ec 40%, #ece7dd 80%);
+  background-size: 800px 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-dots font-sans text-ink antialiased;
+  }
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+    font-variation-settings: "SOFT" 100, "WONK" 0;
+  }
+  h1, h2 {
+    text-wrap: balance;
+  }
+  :focus-visible {
+    outline: 3px solid var(--color-purple);
+    outline-offset: 2px;
+    border-radius: 12px;
+  }
+  ::selection {
+    background: var(--color-sun);
+    color: var(--color-ink);
+  }
+  code, kbd, pre, samp {
+    font-family: var(--font-mono);
+  }
+}
+
+/* Reduced motion (§15.1.5) */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Markdown prose (notes, brief) — rendered via react-markdown, never raw HTML */
+.prose-lab { @apply text-[15px] leading-relaxed text-ink-soft; }
+.prose-lab h1, .prose-lab h2, .prose-lab h3 { @apply mt-6 mb-2 font-display text-ink; }
+.prose-lab h1 { @apply text-xl font-bold; }
+.prose-lab h2 { @apply text-lg font-bold; }
+.prose-lab h3 { @apply text-base font-bold; }
+.prose-lab p { @apply my-2; }
+.prose-lab ul { @apply my-2 list-disc pl-5; }
+.prose-lab ol { @apply my-2 list-decimal pl-5; }
+.prose-lab li { @apply my-0.5; }
+.prose-lab a { @apply font-semibold text-purple-deep underline underline-offset-2; }
+.prose-lab code { @apply rounded-md bg-canvas px-1.5 py-0.5 text-[13px] text-ink; }
+.prose-lab pre { @apply my-3 overflow-x-auto rounded-2xl bg-pill p-4 text-[13px] text-white; }
+.prose-lab pre code { @apply bg-transparent p-0 text-white; }
+.prose-lab blockquote { @apply my-3 border-l-4 border-lavender pl-4 italic; }
+.prose-lab table { @apply my-3 w-full text-sm; }
+.prose-lab th { @apply border-b border-line px-2 py-1 text-left text-xs uppercase tracking-wider text-muted; }
+.prose-lab td { @apply border-b border-line px-2 py-1; }
