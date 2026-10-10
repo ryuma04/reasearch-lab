@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
@@ -38,19 +39,18 @@ func (s *Store) UpsertGitHubUser(ctx context.Context, githubID int64, name, emai
 		RETURNING `+userCols, githubID, name, email, username, avatar))
 }
 
-// DevUser returns (creating if needed) a local user for development without GitHub.
-func (s *Store) DevUser(ctx context.Context, name string) (*User, error) {
-	u, err := scanUser(s.Pool.QueryRow(ctx,
-		`SELECT `+userCols+` FROM users WHERE github_id IS NULL AND github_username=$1`, "dev:"+name))
-	if err == nil {
-		return u, nil
-	}
-	if err != ErrNotFound {
-		return nil, err
-	}
+// LocalUser returns (creating if needed) a user who signs in with email + name, without GitHub
+// (used while GitHub OAuth is not set up). The email identifies the account; the name is updated.
+func (s *Store) LocalUser(ctx context.Context, email, name string) (*User, error) {
+	key := "local:" + email
 	return scanUser(s.Pool.QueryRow(ctx, `
-		INSERT INTO users (name, email, github_username) VALUES ($1, $2, $3) RETURNING `+userCols,
-		name, name+"@localhost", "dev:"+name))
+		WITH found AS (
+			UPDATE users SET name=$2 WHERE github_id IS NULL AND github_username=$3 RETURNING `+userCols+`
+		), created AS (
+			INSERT INTO users (name, email, github_username)
+			SELECT $2, $1, $3 WHERE NOT EXISTS (SELECT 1 FROM found) RETURNING `+userCols+`
+		)
+		SELECT * FROM found UNION ALL SELECT * FROM created`, email, name, key))
 }
 
 type GitHubConnection struct {
@@ -123,4 +123,28 @@ func (s *Store) PushesByUser(ctx context.Context, userID int64) ([]PushSummary, 
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+// ErrEmailTaken means an email + password account already exists for that email.
+var ErrEmailTaken = errors.New("email already registered")
+
+// CreatePasswordUser registers an email + password account (password is already hashed).
+func (s *Store) CreatePasswordUser(ctx context.Context, email, name, passwordHash string) (*User, error) {
+	u, err := scanUser(s.Pool.QueryRow(ctx, `
+		INSERT INTO users (name, email, github_username, password_hash) VALUES ($1, $2, '', $3)
+		ON CONFLICT DO NOTHING RETURNING `+userCols, name, email, passwordHash))
+	if errors.Is(err, ErrNotFound) {
+		return nil, ErrEmailTaken
+	}
+	return u, err
+}
+
+// PasswordUser returns the email + password account and its stored hash.
+func (s *Store) PasswordUser(ctx context.Context, email string) (*User, string, error) {
+	var hash string
+	u := &User{}
+	err := s.Pool.QueryRow(ctx, `SELECT `+userCols+`, password_hash FROM users
+		WHERE github_id IS NULL AND password_hash <> '' AND lower(email) = lower($1)`, email).
+		Scan(&u.ID, &u.GitHubID, &u.Name, &u.Email, &u.GitHubUsername, &u.AvatarURL, &u.CreatedAt, &hash)
+	return u, hash, notFound(err)
 }

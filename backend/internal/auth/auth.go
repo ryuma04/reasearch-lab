@@ -3,9 +3,11 @@ package auth
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -15,6 +17,9 @@ import (
 	"github.com/ryuma04/tapu-sena/backend/internal/httpx"
 	"github.com/ryuma04/tapu-sena/backend/internal/store"
 )
+
+// SessionCookie is the name of the session cookie (also used by the CSRF middleware).
+const SessionCookie = sessionCookie
 
 const (
 	sessionCookie = "lab_session"
@@ -78,7 +83,8 @@ func Require(next http.Handler) http.Handler {
 // RequireInternal protects /internal/* endpoints used by the agent worker and n8n.
 func (s *Service) RequireInternal(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-Internal-Token") != s.cfg.InternalToken {
+		got := r.Header.Get("X-Internal-Token")
+		if got == "" || subtle.ConstantTimeCompare([]byte(got), []byte(s.cfg.InternalToken)) != 1 {
 			httpx.Fail(w, r, httpx.ErrForbidden)
 			return
 		}
@@ -109,14 +115,32 @@ func (s *Service) safeRedirect(target string) string {
 	return s.cfg.FrontendURL + "/profile"
 }
 
-// GET /auth/github/login[?redirect=<frontend url>]
+// SafeReturnPath accepts only a relative in-app path ("/workspaces/7"), never "//host" or a URL.
+func SafeReturnPath(p string) string {
+	if p == "" || !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") || strings.HasPrefix(p, "/\\") ||
+		strings.ContainsAny(p, "\r\n") {
+		return "/dashboard"
+	}
+	return p
+}
+
+// loginTarget is where the browser lands after GitHub login. With ?return_to=/path it is the
+// frontend's /auth/callback page (which confirms the session, then opens the path).
+func (s *Service) loginTarget(r *http.Request) string {
+	if rt := r.URL.Query().Get("return_to"); rt != "" {
+		return s.cfg.FrontendURL + "/auth/callback?return_to=" + url.QueryEscape(SafeReturnPath(rt))
+	}
+	return s.safeRedirect(r.URL.Query().Get("redirect"))
+}
+
+// GET /auth/github/login[?return_to=/path | ?redirect=<frontend url>]
 func (s *Service) Login(w http.ResponseWriter, r *http.Request) error {
 	if !s.cfg.GitHubConfigured() {
 		return httpx.Errorf(http.StatusServiceUnavailable, "GitHub OAuth is not configured (set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET)")
 	}
 	state := RandomToken(24)
 	http.SetCookie(w, &http.Cookie{
-		Name: stateCookie, Value: state + "|" + s.safeRedirect(r.URL.Query().Get("redirect")),
+		Name: stateCookie, Value: state + "|" + s.loginTarget(r),
 		Path: "/auth/github", HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: 600,
 		Secure: strings.HasPrefix(s.cfg.PublicAPIURL, "https"),
 	})
@@ -136,7 +160,11 @@ func (s *Service) Callback(w http.ResponseWriter, r *http.Request) error {
 	}
 	http.SetCookie(w, &http.Cookie{Name: stateCookie, Path: "/auth/github", MaxAge: -1})
 	if e := r.URL.Query().Get("error"); e != "" {
-		http.Redirect(w, r, s.cfg.FrontendURL+"/login?error="+e, http.StatusFound)
+		reason := "error"
+		if e == "access_denied" {
+			reason = "cancelled"
+		}
+		http.Redirect(w, r, s.cfg.FrontendURL+"/login?reason="+reason, http.StatusFound)
 		return nil
 	}
 
@@ -173,24 +201,49 @@ func (s *Service) Callback(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	slog.Info("user logged in with GitHub", "user_id", user.ID, "login", ghUser.Login)
+	if strings.Contains(redirect, "/auth/callback?") {
+		redirect = strings.Replace(redirect, "/auth/callback?", "/auth/callback?status=success&", 1)
+	}
 	http.Redirect(w, r, redirect, http.StatusFound)
 	return nil
 }
 
-// POST /auth/dev-login {"name": "alice"} — only when DEV_LOGIN_ENABLED=true.
-// Returns a bearer token too, handy for curl and for testing without GitHub.
+// POST /auth/dev-login {"email": "you@example.com", "name": "Your Name"}
+// Email + name sign-in without GitHub, only when DEV_LOGIN_ENABLED=true (until GitHub OAuth is
+// configured). Sets the session cookie; also returns a bearer token for curl/testing.
+// GitHub can still be connected later for pushes.
 func (s *Service) DevLogin(w http.ResponseWriter, r *http.Request) error {
 	if !s.cfg.DevLoginEnabled {
 		return httpx.Errorf(http.StatusNotFound, "not found")
 	}
 	var body struct {
-		Name string `json:"name"`
+		Name  string `json:"name"`
+		Email string `json:"email"`
 	}
-	_ = httpx.Decode(r, &body)
+	if r.ContentLength != 0 {
+		if err := httpx.Decode(r, &body); err != nil {
+			return err
+		}
+	}
+	body.Name = strings.TrimSpace(body.Name)
+	body.Email = strings.ToLower(strings.TrimSpace(body.Email))
+	if body.Email == "" {
+		// curl convenience: {"name": "alice"} -> alice@localhost
+		if body.Name == "" {
+			body.Name = "researcher"
+		}
+		body.Email = strings.ToLower(strings.ReplaceAll(body.Name, " ", ".")) + "@localhost"
+	}
+	if !emailRe.MatchString(body.Email) {
+		return httpx.Errorf(http.StatusBadRequest, "enter a valid email address")
+	}
 	if body.Name == "" {
-		body.Name = "researcher"
+		body.Name, _, _ = strings.Cut(body.Email, "@")
 	}
-	user, err := s.store.DevUser(r.Context(), body.Name)
+	if len(body.Name) > 100 {
+		return httpx.Errorf(http.StatusBadRequest, "name is too long")
+	}
+	user, err := s.store.LocalUser(r.Context(), body.Email, body.Name)
 	if err != nil {
 		return err
 	}
@@ -201,6 +254,8 @@ func (s *Service) DevLogin(w http.ResponseWriter, r *http.Request) error {
 	httpx.JSON(w, http.StatusOK, map[string]any{"user": user, "token": token})
 	return nil
 }
+
+var emailRe = regexp.MustCompile(`^[^@\s]{1,64}@[^@\s]{1,190}$`)
 
 // POST /auth/logout
 func (s *Service) Logout(w http.ResponseWriter, r *http.Request) error {
@@ -382,3 +437,89 @@ func (s *Service) Disconnect(w http.ResponseWriter, r *http.Request) error {
 	httpx.JSON(w, http.StatusOK, map[string]any{"status": "disconnected", "revoked_on_github": revoked})
 	return nil
 }
+
+type passwordBody struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+	Name     string `json:"name"`
+}
+
+func (b *passwordBody) clean() error {
+	b.Email = strings.ToLower(strings.TrimSpace(b.Email))
+	b.Name = strings.TrimSpace(b.Name)
+	if !emailRe.MatchString(b.Email) {
+		return httpx.Errorf(http.StatusBadRequest, "enter a valid email address")
+	}
+	if err := validatePassword(b.Password); err != nil {
+		return httpx.Errorf(http.StatusBadRequest, err.Error())
+	}
+	if len(b.Name) > 100 {
+		return httpx.Errorf(http.StatusBadRequest, "name is too long")
+	}
+	return nil
+}
+
+// POST /auth/register {"email", "password", "name"} — email + password account (alongside GitHub).
+// GitHub can still be connected later from the profile for pushes.
+func (s *Service) Register(w http.ResponseWriter, r *http.Request) error {
+	if !s.cfg.EmailLoginEnabled {
+		return httpx.Errorf(http.StatusNotFound, "email sign-in is disabled")
+	}
+	var body passwordBody
+	if err := httpx.Decode(r, &body); err != nil {
+		return err
+	}
+	if err := body.clean(); err != nil {
+		return err
+	}
+	if body.Name == "" {
+		body.Name, _, _ = strings.Cut(body.Email, "@")
+	}
+	hash, err := HashPassword(body.Password)
+	if err != nil {
+		return err
+	}
+	user, err := s.store.CreatePasswordUser(r.Context(), body.Email, body.Name, hash)
+	if errors.Is(err, store.ErrEmailTaken) {
+		return httpx.Errorf(http.StatusConflict, "an account with this email already exists; sign in instead")
+	}
+	if err != nil {
+		return err
+	}
+	if _, err := s.setSession(w, user.ID); err != nil {
+		return err
+	}
+	httpx.JSON(w, http.StatusCreated, map[string]any{"user": user})
+	return nil
+}
+
+// POST /auth/login {"email", "password"}
+func (s *Service) PasswordLogin(w http.ResponseWriter, r *http.Request) error {
+	if !s.cfg.EmailLoginEnabled {
+		return httpx.Errorf(http.StatusNotFound, "email sign-in is disabled")
+	}
+	var body passwordBody
+	if err := httpx.Decode(r, &body); err != nil {
+		return err
+	}
+	body.Email = strings.ToLower(strings.TrimSpace(body.Email))
+	invalid := httpx.Errorf(http.StatusUnauthorized, "wrong email or password")
+	user, hash, err := s.store.PasswordUser(r.Context(), body.Email)
+	if errors.Is(err, store.ErrNotFound) {
+		CheckPassword(body.Password, dummyHash) // same work either way: no account-existence timing leak
+		return invalid
+	}
+	if err != nil {
+		return err
+	}
+	if !CheckPassword(body.Password, hash) {
+		return invalid
+	}
+	if _, err := s.setSession(w, user.ID); err != nil {
+		return err
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"user": user})
+	return nil
+}
+
+var dummyHash, _ = HashPassword("not-a-real-password")
