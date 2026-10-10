@@ -102,6 +102,8 @@ def run_tests(run_id: int) -> dict:
                                600, slug, collect_metrics=False)
         t.sandbox_seconds += res.seconds
         summary = _junit(root / "results" / "junit.xml")
+        summary.update(exit_code=res.exit_code, exec_status=res.status or ("succeeded" if res.ok else "failed"),
+                       error=res.error, log_tail=res.error_report() or res.log_tail)
         t.notes = f"{summary['passed']} passed, {summary['failed']} failed, {summary['skipped']} skipped"
         nodes = [node(f"test:{f}", "test", f, "problem" if any(c["file"] == f and c["status"] == "failed" for c in summary["cases"])
                       else "done") for f in {c["file"] for c in summary["cases"]}]
@@ -112,6 +114,70 @@ def run_tests(run_id: int) -> dict:
                   "map_nodes": nodes})
         summary["exec_id"] = res.exec_id
     return summary
+
+
+def is_claim_case(case: dict) -> bool:
+    return (case.get("file") or "").endswith("test_claims.py")
+
+
+def assess(summary: dict) -> dict:
+    """Verdict from execution evidence only: {status, reason, correctness_failed, claims_failed, warnings}.
+
+    success | success_with_warnings | failed (a required correctness test failed: a code problem) |
+    blocked (the tests could not run, so nothing is verified). A claim test failing means a result differs
+    from the paper, which the scorecard and Gap Detective explain; it is not a code failure.
+    """
+    failed = [c for c in summary.get("cases", []) if c["status"] == "failed"]
+    correctness = [c["name"] for c in failed if not is_claim_case(c)]
+    claims = [c["name"] for c in failed if is_claim_case(c)]
+    base = {"correctness_failed": correctness, "claims_failed": claims, "warnings": []}
+    if summary.get("exec_status") == "error":
+        return {**base, "status": "blocked", "reason": f"The sandbox could not run the tests: {summary.get('error') or 'unknown error'}"}
+    if summary.get("exec_status") in ("timed_out", "cancelled"):
+        return {**base, "status": "blocked", "reason": f"The test run {summary['exec_status'].replace('_', ' ')} before finishing"}
+    if not summary.get("total"):
+        return {**base, "status": "blocked",
+                "reason": "pytest produced no results (results/junit.xml is missing or empty), so no test was verified"}
+    if correctness:
+        return {**base, "status": "failed", "reason": f"{len(correctness)} required correctness test(s) failed: " + ", ".join(correctness[:5])}
+    warnings = []
+    if summary.get("skipped"):
+        warnings.append(f"{summary['skipped']} test(s) were skipped, not passed")
+    if claims:
+        warnings.append(f"{len(claims)} claim test(s) failed: our results differ from the paper")
+    return {**base, "status": "success_with_warnings" if warnings else "success", "reason": "", "warnings": warnings}
+
+
+def run_and_repair(run_id: int, max_repairs: int | None = None) -> dict:
+    """Run the tests; when a correctness test fails, send the real pytest output to the Debugger, re-install if
+    needed and re-run the tests. Bounded by MAX_REPAIR_ATTEMPTS. The outcome comes only from the re-run results."""
+    from . import coding
+    from .config import settings as cfg
+    limit = cfg.max_repair_attempts if max_repairs is None else max_repairs
+    history: list[dict] = []
+    summary: dict = {}
+    verdict: dict = {}
+    for attempt in range(limit + 1):
+        summary = run_tests(run_id)
+        verdict = assess(summary)
+        history.append({"attempt": attempt, "status": verdict["status"], "failed": verdict["correctness_failed"]})
+        if verdict["status"] != "failed" or attempt == limit:
+            break
+        if attempt > 0 and set(history[-1]["failed"]) == set(history[-2]["failed"]):
+            bus.emit(run_id, "testing.runner", "debug_ineffective",
+                     "The last fix did not change which correctness tests fail",
+                     "A fix is not accepted without a passing re-run")
+        if not coding._fix(run_id, "coding.reviewer", summary.get("log_tail") or verdict["reason"], attempt + 1, ""):
+            break  # the Debugger found nothing: the failure stays a failure
+        ok, tail = coding.ensure_installed(run_id)
+        if not ok:
+            verdict = {**verdict, "status": "blocked", "reason": "Re-installing after the fix failed: " + tail[-300:]}
+            break
+    if verdict["status"] == "failed":
+        verdict["reason"] += f" (still failing after {len(history)} test run(s); {limit} repair attempt(s) allowed)"
+    verdict["history"] = history
+    verdict["summary"] = {k: v for k, v in summary.items() if k not in ("cases", "log_tail")}
+    return verdict
 
 
 def _junit(path) -> dict:

@@ -9,6 +9,7 @@ from __future__ import annotations
 import contextvars
 import json
 import logging
+import os
 import re
 import time
 from dataclasses import dataclass
@@ -24,6 +25,39 @@ log = logging.getLogger("lab.llm")
 current_tokens: contextvars.ContextVar[list[int] | None] = contextvars.ContextVar("current_tokens", default=None)
 
 _http = httpx.Client(timeout=httpx.Timeout(20.0, read=180.0))
+
+
+# Per-agent key pools (spec: two keys per agent, never shared across agents). Variable names: <PREFIX>_1, <PREFIX>_2.
+# An agent whose pool is not configured falls back to the shared GROQ_API_KEYS / GEMINI_API_KEYS lists.
+AGENT_POOLS: dict[str, tuple[str, str]] = {
+    "research_a": ("groq", "GROQ_RESEARCH_A_KEY"),
+    "research_b": ("groq", "GROQ_RESEARCH_B_KEY"),
+    "planning_a": ("gemini", "GEMINI_PLANNING_A_KEY"),
+    "planning_b": ("gemini", "GEMINI_PLANNING_B_KEY"),
+}
+AUTH_COOLDOWN = 3600.0  # a key the provider rejected is not retried for an hour (and an operator warning is logged)
+
+# Safe metadata of every model call in this context: agent, provider, model, attempt, status, latency, error category.
+# It never holds keys, prompts or responses.
+invocations: contextvars.ContextVar[list[dict] | None] = contextvars.ContextVar("llm_invocations", default=None)
+
+
+def pool_keys(agent: str | None) -> tuple[str, list[str]] | None:
+    """(provider, keys) of the agent's own pool, or None when the agent has no configured pool."""
+    spec = AGENT_POOLS.get(agent or "")
+    if not spec:
+        return None
+    keys = [v.strip() for v in (os.environ.get(f"{spec[1]}_1", ""), os.environ.get(f"{spec[1]}_2", "")) if v.strip()]
+    return (spec[0], keys) if keys else None
+
+
+def _record(agent, provider, model, attempt, ok, started, category="") -> None:
+    rec = {"agent": agent or "shared", "provider": provider, "model": model, "attempt": attempt, "ok": ok,
+           "latency_ms": int((time.time() - started) * 1000), "error_category": category}
+    log.info("llm_invocation %s", rec)
+    acc = invocations.get()
+    if acc is not None:
+        acc.append(rec)
 
 
 @dataclass
@@ -54,6 +88,18 @@ ROLE_MODELS = {
 }
 
 
+def _agent_chain(agent: str, role: str) -> list[tuple[str, str, str, str]] | None:
+    """Only the agent's own two keys (no spill into another agent's pool)."""
+    pool = pool_keys(agent)
+    if pool is None:
+        return None
+    provider, keys = pool
+    if provider == "gemini":
+        return [("gemini", m, k, f"{agent}:{i + 1}") for m in settings.gemini_models for i, k in enumerate(keys)]
+    model = settings.model_planner if role == "long" else ROLE_MODELS.get(role, ROLE_MODELS["writer"])()
+    return [("groq", model, k, f"{agent}:{i + 1}") for i, k in enumerate(keys)]
+
+
 def _chain(role: str) -> list[tuple[str, str, str, str]]:
     """(provider, model, api key, rate-limit label) in order of preference. Every key of a provider
     is tried before moving to the next provider, so one exhausted key never stops the lab."""
@@ -67,11 +113,11 @@ def _chain(role: str) -> list[tuple[str, str, str, str]]:
 
 
 def chat(role: str, system: str, user: str, *, json_mode: bool = False, max_tokens: int = 2048,
-         temperature: float = 0.2) -> Result | None:
+         temperature: float = 0.2, agent: str | None = None) -> Result | None:
     """Call the best available model for the role, switching API key / provider when one hits its limit.
     If every key is only briefly rate-limited (per-minute limits), waits for the first one to free up."""
     for attempt in range(3):
-        res = _try_chain(role, system, user, json_mode, max_tokens, temperature)
+        res = _try_chain(role, system, user, json_mode, max_tokens, temperature, agent)
         if res is not None:
             return res
         waits = [t - time.time() for t in _cooldown.values() if t > time.time()]
@@ -82,14 +128,18 @@ def chat(role: str, system: str, user: str, *, json_mode: bool = False, max_toke
     return None
 
 
-def _try_chain(role, system, user, json_mode, max_tokens, temperature) -> Result | None:
-    for provider, model, key, label in _chain(role):
+def _try_chain(role, system, user, json_mode, max_tokens, temperature, agent=None) -> Result | None:
+    pooled = _agent_chain(agent, role) if agent else None
+    attempt = 0
+    for provider, model, key, label in (pooled if pooled is not None else _chain(role)):
         if _cooldown.get(label, 0) > time.time():
             continue
         dec = api.rate_acquire(label, model)
         if not dec.get("allowed", True):
             log.info("rate limit for %s:%s, switching key/provider", label, model)
             continue
+        attempt += 1
+        started = time.time()
         try:
             if provider == "gemini":
                 res = _gemini(model, key, system, user, json_mode, max_tokens, temperature)
@@ -98,10 +148,22 @@ def _try_chain(role, system, user, json_mode, max_tokens, temperature) -> Result
         except RateLimited as e:
             _cooldown[label] = time.time() + e.retry_after
             log.warning("%s:%s rate limited by the provider for %.0fs", label, model, e.retry_after)
+            _record(agent, provider, model, attempt, False, started, "rate_limited")
             continue
-        except Exception as e:  # noqa: BLE001 - try the next key/provider
-            log.warning("%s:%s failed: %s", label, model, e)
+        except Exception as e:  # noqa: BLE001 - classify, then try the next key only when that can help
+            code = _http_status(e)
+            if code in (401, 403):
+                _cooldown[label] = time.time() + AUTH_COOLDOWN
+                log.error("OPERATOR WARNING: the %s key '%s' was rejected by the provider (HTTP %s); it is paused for 1 hour", provider, label, code)
+                _record(agent, provider, model, attempt, False, started, "auth")
+                continue
+            log.warning("%s:%s failed: %s", label, model, str(e)[:200])
+            if code in (400, 404, 422) and pooled is not None:  # a bad request will fail on the other key too
+                _record(agent, provider, model, attempt, False, started, "invalid_request")
+                return None
+            _record(agent, provider, model, attempt, False, started, "transient" if (code is None or code >= 500) else "error")
             continue
+        _record(agent, provider, model, attempt, True, started)
         acc = current_tokens.get()
         if acc is not None:
             acc[0] += res.tokens
@@ -109,8 +171,13 @@ def _try_chain(role, system, user, json_mode, max_tokens, temperature) -> Result
     return None
 
 
-def chat_json(role: str, system: str, user: str, *, max_tokens: int = 4096) -> tuple[dict | list | None, int]:
-    res = chat(role, system + "\nRespond with valid JSON only.", user, json_mode=True, max_tokens=max_tokens)
+def _http_status(e: Exception) -> int | None:
+    m = re.match(r"HTTP (\d{3})", str(e))
+    return int(m.group(1)) if m else None
+
+
+def chat_json(role: str, system: str, user: str, *, max_tokens: int = 4096, agent: str | None = None) -> tuple[dict | list | None, int]:
+    res = chat(role, system + "\nRespond with valid JSON only.", user, json_mode=True, max_tokens=max_tokens, agent=agent)
     if res is None:
         return None, 0
     data = res.json()

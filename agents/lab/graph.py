@@ -18,7 +18,7 @@ from langgraph.types import interrupt
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
-from . import bus, coding, db, gap, memory, research, steps, testing
+from . import bus, coding, db, gap, memory, planner, research, steps, testing
 from .config import settings as cfg
 from .observer import edge, node
 from .project import fmt, fresh_project, load_settings, pdir, run_row
@@ -34,6 +34,10 @@ class State(TypedDict, total=False):
     env: dict
     timeout: int
     long_run: dict
+    plan_invalid: bool      # approval refused: no validated implementation plan exists
+    verdict: str            # success | success_with_warnings | failed | blocked (from real test evidence)
+    verdict_reason: str
+    verdict_warnings: list
 
 
 def _stage(run_id: int, stage: str, status: str = "running") -> None:
@@ -117,9 +121,21 @@ def n_ask_plan(s: State) -> State:
                           for p in brief["papers"]],
                "settings": load_settings(run_id),
                "actions": ["approve", "edit", "reject"]}
+    review = _plan_review(run_id, brief, reuse=bool(s.get("plan_invalid")))
+    payload["implementation_plans"] = review
+    payload["plan_ready"] = review.get("ready") is not None
     _stage(run_id, "plan_approval", "waiting_approval")
     _ask(run_id, "plan", payload, "Checkpoint 1: review the Research Map and plan, then approve, edit or reject")
     return {}
+
+
+def _plan_review(run_id: int, brief: dict, reuse: bool = False) -> dict:
+    """Initial + optimized implementation plans (both kept). Re-asking after a refused approval reuses the saved review."""
+    path = pdir(run_id) / "research" / "plan_review.json"
+    if reuse and path.exists():
+        return json.loads(path.read_text(encoding="utf-8"))
+    note = (db.q1("SELECT w.note FROM workspaces w JOIN runs r ON r.workspace_id=w.id WHERE r.id=%s", (run_id,)) or {}).get("note", "")
+    return planner.build_plans(run_id, brief, note or "")
 
 
 def n_wait_plan(s: State) -> State:
@@ -129,6 +145,11 @@ def n_wait_plan(s: State) -> State:
     if action == "reject":
         bus.emit(run_id, "system", "run_rejected", "The researcher rejected the plan; the run stops here", "")
         return {"outcome": "rejected"}
+    rv = pdir(run_id) / "research" / "plan_review.json"
+    if rv.exists() and json.loads(rv.read_text(encoding="utf-8")).get("ready") is None:
+        bus.emit(run_id, "system", "plan_blocked", "Coding was not started: no implementation plan passed validation",
+                 "Coding only starts from an approved plan that passed the quality gate; edit or reject the plan")
+        return {"plan_invalid": True, "outcome": ""}
     if action == "edit":
         structured = coding.apply_setting_changes(run_id, resp.get("changes") or {}, resp.get("instruction", ""))
         changes = structured + (coding.apply_researcher_edit(run_id, resp["instruction"]) if resp.get("instruction", "").strip() else [])
@@ -136,7 +157,7 @@ def n_wait_plan(s: State) -> State:
                  "Plan edited: " + (", ".join(changes) if changes else "instruction passed to the agents"),
                  resp.get("instruction", ""), {"changes": changes})
         bus.r.rpush(f"lab:run:{run_id}:instructions", json.dumps({"agent": "run", "text": resp.get("instruction", "")}))
-    return {"outcome": ""}
+    return {"outcome": "", "plan_invalid": False}
 
 
 def n_code(s: State) -> State:
@@ -231,13 +252,17 @@ def n_test(s: State) -> State:
     run_id = s["run_id"]
     _stage(run_id, "testing")
     testing.design_tests(run_id)
-    testing.run_tests(run_id)
+    verdict = testing.run_and_repair(run_id)
+    bus.emit(run_id, "testing.runner", "test_verdict",
+             f"Test verdict: {verdict['status'].replace('_', ' ')}" + (f" ({verdict['reason']})" if verdict["reason"] else ""),
+             "Decided from the tests that actually ran, never from a model summary",
+             {"verdict": verdict["status"], "warnings": verdict["warnings"], "history": verdict["history"]})
     rows = testing.compute_scorecard(run_id)
     primary = next((r for r in rows if r["claim"]["metric_name"] == _primary_name(run_id)), rows[-1] if rows else None)
     if primary:
         db.ex("UPDATE runs SET primary_metric=%s, primary_higher_is_better=%s WHERE id=%s",
               (primary["claim"]["metric_name"], primary["claim"]["higher_is_better"], run_id))
-    return {}
+    return {"verdict": verdict["status"], "verdict_reason": verdict["reason"], "verdict_warnings": verdict["warnings"]}
 
 
 def _primary_name(run_id: int) -> str:
@@ -266,6 +291,13 @@ def n_gap(s: State) -> State:
 
 def n_finalize(s: State) -> State:
     run_id = s["run_id"]
+    if s.get("verdict") in ("failed", "blocked"):  # required validation did not pass: never report success
+        reason = s.get("verdict_reason") or "Required tests did not pass"
+        db.ex("UPDATE runs SET status='failed', stage='testing', error=%s, finished_at=now() WHERE id=%s", (reason[:1000], run_id))
+        bus.emit(run_id, "system", "run_failed", f"Run #{run_id} did not pass validation: {reason}",
+                 "Required tests failed or could not run, so the version is not marked successful",
+                 {"verdict": s["verdict"], "next_action": "Open the Code sandbox, fix the failing tests, then re-run"})
+        return {"outcome": "failed"}
     r = run_row(run_id)
     brief = _brief(run_id)
     metrics = db.q("SELECT name, value FROM metrics WHERE run_id=%s ORDER BY id", (run_id,))
@@ -286,13 +318,15 @@ def n_finalize(s: State) -> State:
              VALUES (%s,%s,'agent','system',%s,%s)""", (r["workspace_id"], run_id, f"Run #{run_id} summary", "\n".join(note)))
     db.ex("UPDATE runs SET status='completed', stage='push', finished_at=now() WHERE id=%s", (run_id,))
     bus.emit(run_id, "system", "run_completed", msg, "Results are ready; publish to Hugging Face when you are happy",
-             {"scorecard": counts})
+             {"scorecard": counts, "verdict": s.get("verdict") or "success", "warnings": s.get("verdict_warnings") or []})
     return {"outcome": "completed"}
 
 
 # ---------- routing ----------
 
 def after_wait_plan(s: State) -> str:
+    if s.get("plan_invalid"):
+        return "ask_plan"
     return END if s.get("outcome") == "rejected" else "code"
 
 
@@ -314,6 +348,10 @@ def after_execute(s: State) -> str:
     return "ask_help" if s.get("help_reason") else "test"
 
 
+def after_test(s: State) -> str:
+    return "finalize" if s.get("verdict") in ("failed", "blocked") else "gap"  # no gap analysis on broken code
+
+
 def after_wait_help(s: State) -> str:
     if s.get("outcome") == "failed":
         return END
@@ -333,7 +371,7 @@ def build(checkpointer):
     g.add_edge("research", "settings")
     g.add_edge("settings", "ask_plan")
     g.add_edge("ask_plan", "wait_plan")
-    g.add_conditional_edges("wait_plan", after_wait_plan, ["code", END])
+    g.add_conditional_edges("wait_plan", after_wait_plan, ["code", "ask_plan", END])
     g.add_conditional_edges("code", after_code, ["ask_help", "budget"])
     g.add_conditional_edges("budget", after_budget, ["ask_help", "ask_long_run", "execute"])
     g.add_edge("ask_long_run", "wait_long_run")
@@ -341,7 +379,7 @@ def build(checkpointer):
     g.add_conditional_edges("execute", after_execute, ["ask_help", "test"])
     g.add_edge("ask_help", "wait_help")
     g.add_conditional_edges("wait_help", after_wait_help, ["code", "execute", END])
-    g.add_edge("test", "gap")
+    g.add_conditional_edges("test", after_test, ["gap", "finalize"])
     g.add_edge("gap", "finalize")
     g.add_edge("finalize", END)
     return g.compile(checkpointer=checkpointer)

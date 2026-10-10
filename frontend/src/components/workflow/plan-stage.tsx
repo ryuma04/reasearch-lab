@@ -16,6 +16,7 @@ import { toast } from "@/components/ui/overlays";
 import { Badge, Card, Input, Textarea } from "@/components/ui/primitives";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui/states";
 import { SourceLink } from "./source-link";
+import { ImplementationPlans, planReviewOf } from "./implementation-plans";
 import { useResolveCheckpoint } from "./shared";
 import type { AgentInfo } from "./types";
 
@@ -118,6 +119,8 @@ export function PlanStage({ runId, cp, canAct, agents, events }: { runId: string
   const problems: string[] = [];
   if (!list.length) problems.push("no settings were produced");
   if (!claims.length) problems.push("no claims were extracted from the paper");
+  const planReview = planReviewOf(cp?.payload);
+  if (planReview && planReview.ready === null) problems.push("no implementation plan passed validation");
   const incomplete = problems.length > 0;
 
   if (!cp) return <EmptyState title="The Coding Plan is not ready yet" body="It is generated from the research findings. It appears here, ready for review, once the research agents finish." />;
@@ -139,6 +142,12 @@ export function PlanStage({ runId, cp, canAct, agents, events }: { runId: string
         </div>
         {!pending && <Lock size={18} className="text-muted" aria-label="Locked" />}
       </div>
+
+      {planReview && (
+        <Block n={0} title="Implementation plan" hint="The Initial Planner drafts it, the Optimizer critiques it. Both are kept; coding starts only from a plan that passed validation.">
+          <ImplementationPlans review={planReview} />
+        </Block>
+      )}
 
       <Block n={1} title="Research findings" hint="From the research agents. Open a claim to see the exact sentence and page in the paper.">
         {brief.data?.summary && <p className="text-sm text-ink-soft">{brief.data.summary}</p>}
