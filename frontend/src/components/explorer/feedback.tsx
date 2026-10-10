@@ -10,7 +10,7 @@ const LABEL: Record<XFeedback["decision"], { text: string; tone: "mint" | "pink"
   accepted: { text: "Accepted", tone: "mint" },
   rejected: { text: "Rejected", tone: "pink" },
   edited: { text: "Edited by you", tone: "sun" },
-  investigate: { text: "Further investigation requested", tone: "sky" },
+  investigate: { text: "To investigate", tone: "sky" },
   added: { text: "Your idea", tone: "lavender" },
 };
 
@@ -38,24 +38,24 @@ export function FeedbackBar({ mine, canEdit, busy, editableText, editKey, onSave
         </div>
       )}
       {mine?.decision === "edited" && mine.edited[editKey ?? "improvement"] && <p className="rounded-lg bg-warning-soft p-2 text-sm"><b>Your refined version:</b> {mine.edited[editKey ?? "improvement"]}</p>}
-      {!canEdit ? <p className="text-xs text-muted">View-only access: only an owner or editor can give feedback.</p> : mode === "idle" ? (
+      {!canEdit ? <p className="text-xs text-muted">View only</p> : mode === "idle" ? (
         <div className="flex flex-wrap gap-1.5">
           <Button size="sm" variant="secondary" disabled={busy} onClick={() => save({ decision: "accepted" })}><Check size={14} weight="bold" /> Accept</Button>
           <Button size="sm" variant="secondary" disabled={busy} onClick={() => setMode("reject")}><Prohibit size={14} /> Reject</Button>
           {editableText != null && <Button size="sm" variant="secondary" disabled={busy} onClick={() => { setText(mine?.edited[editKey ?? "improvement"] ?? editableText); setMode("edit"); }}><PencilSimple size={14} /> Edit</Button>}
-          <Button size="sm" variant="secondary" disabled={busy} onClick={() => save({ decision: "investigate" })}><MagnifyingGlass size={14} /> Investigate further</Button>
+          <Button size="sm" variant="secondary" disabled={busy} onClick={() => save({ decision: "investigate" })}><MagnifyingGlass size={14} /> Investigate</Button>
         </div>
       ) : mode === "reject" ? (
         <div className="space-y-1.5">
-          <label className="block text-xs font-semibold">Why are you rejecting it? (optional)
+          <label className="block text-xs font-semibold">Reason (optional)
             <Textarea value={reason} onChange={(e) => setReason(e.target.value)} maxLength={1000} className="mt-1 min-h-16 text-sm" /></label>
           <div className="flex gap-1.5"><Button size="sm" variant="danger" loading={busy} onClick={() => save({ decision: "rejected", reason })}>Reject</Button><Button size="sm" variant="ghost" onClick={() => setMode("idle")}><X size={14} /> Cancel</Button></div>
         </div>
       ) : (
         <div className="space-y-1.5">
-          <label className="block text-xs font-semibold">Refine this suggestion
+          <label className="block text-xs font-semibold">Your version
             <Textarea value={text} onChange={(e) => setText(e.target.value)} maxLength={3000} className="mt-1 min-h-24 text-sm" /></label>
-          <div className="flex gap-1.5"><Button size="sm" variant="success" loading={busy} disabled={!text.trim()} onClick={() => save({ decision: "edited", edited: { [editKey ?? "improvement"]: text.trim() } })}>Save my version</Button><Button size="sm" variant="ghost" onClick={() => setMode("idle")}><X size={14} /> Cancel</Button></div>
+          <div className="flex gap-1.5"><Button size="sm" variant="success" loading={busy} disabled={!text.trim()} onClick={() => save({ decision: "edited", edited: { [editKey ?? "improvement"]: text.trim() } })}>Save</Button><Button size="sm" variant="ghost" onClick={() => setMode("idle")}><X size={14} /> Cancel</Button></div>
         </div>
       )}
     </div>

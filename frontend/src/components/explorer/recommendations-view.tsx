@@ -12,9 +12,9 @@ import { FeedbackBar } from "./feedback";
 import { HandoffButton } from "./handoff";
 
 const GROUPS: { key: XRecommendation["category"]; title: string; hint: string }[] = [
-  { key: "essential", title: "Essential improvements", hint: "Backed by evidence from more than one source of limitation." },
-  { key: "high_value", title: "High-value opportunities", hint: "Backed by at least one verified limitation." },
-  { key: "experimental", title: "Experimental ideas", hint: "AI hypotheses without verified evidence: worth testing, not worth trusting yet." },
+  { key: "essential", title: "Essential", hint: "" },
+  { key: "high_value", title: "High value", hint: "" },
+  { key: "experimental", title: "Experimental", hint: "AI ideas without quotes" },
 ];
 const CX = { low: "mint", medium: "sun", high: "pink" } as const;
 
@@ -29,27 +29,29 @@ function RecCard({ r, mine, canEdit, actions, byId, arxivId }: { r: XRecommendat
     <Card variant="bento" className="space-y-3 p-5">
       <div className="flex flex-wrap items-center gap-1.5">
         <Badge tone="faint">Priority {r.priority}</Badge>
-        <Badge tone={CX[r.complexity]}>Complexity: {r.complexity}</Badge>
-        <Badge tone={r.evidence_backed ? "mint" : "lavender"}>{r.evidence_backed ? "Linked to evidence-backed gap" : "Experimental"}</Badge>
+        <Badge tone={CX[r.complexity]}>{r.complexity.charAt(0).toUpperCase() + r.complexity.slice(1)} effort</Badge>
       </div>
       <h3 className="font-display text-lg font-semibold leading-snug">{r.title}</h3>
       <div className="grid gap-3 md:grid-cols-2">
-        <Field label="Current limitation">{r.limitation}</Field>
-        <Field label="Proposed improvement">{improvement}{mine?.decision === "edited" && <Badge tone="sun" className="ml-1.5">your version</Badge>}</Field>
-        {r.benefit && <Field label="Expected benefit">{r.benefit}</Field>}
-        {r.resources && <Field label="Resource requirements">{r.resources}</Field>}
-        {r.dependencies.length > 0 && <Field label="Dependencies"><ul className="list-disc pl-4">{r.dependencies.map((d) => <li key={d}>{d}</li>)}</ul></Field>}
-        {r.evaluation && <Field label="Suggested evaluation">{r.evaluation}</Field>}
+        <Field label="Problem">{r.limitation}</Field>
+        <Field label="Idea">{improvement}{mine?.decision === "edited" && <Badge tone="sun" className="ml-1.5">your version</Badge>}</Field>
       </div>
-      <Field label={`Supporting research (${r.references.length})`}>
-        {r.references.length ? (
-          <ul className="space-y-0.5">{r.references.map((id) => { const p = byId.get(id); return p ? <li key={id}>{p.title}{p.year ? ` (${p.year})` : ""} <SourceLink url={p.url} kind="paper" className="ml-1" /></li> : null; })}</ul>
-        ) : <span className="text-muted">No supporting papers: this is a hypothesis.</span>}
-      </Field>
+      <details className="text-sm">
+        <summary className="cursor-pointer font-semibold text-purple-deep">More{r.references.length ? ` (${r.references.length} source${r.references.length === 1 ? "" : "s"})` : ""}</summary>
+        <div className="mt-2 grid gap-3 rounded-xl bg-canvas p-3 md:grid-cols-2">
+          {r.benefit && <Field label="Benefit">{r.benefit}</Field>}
+          {r.evaluation && <Field label="How to test">{r.evaluation}</Field>}
+          {r.resources && <Field label="Resources">{r.resources}</Field>}
+          {r.dependencies.length > 0 && <Field label="Depends on"><ul className="list-disc pl-4">{r.dependencies.map((d) => <li key={d}>{d}</li>)}</ul></Field>}
+          {r.references.length > 0 && (
+            <Field label="Sources"><ul className="space-y-0.5">{r.references.map((id) => { const p = byId.get(id); return p ? <li key={id}>{p.title}{p.year ? ` (${p.year})` : ""} <SourceLink url={p.url} kind="paper" className="ml-1" /></li> : null; })}</ul></Field>
+          )}
+        </div>
+      </details>
       <FeedbackBar mine={mine} canEdit={canEdit} busy={actions.feedback.isPending || actions.clear.isPending} editableText={r.improvement} editKey="improvement"
         onSave={(b) => actions.feedback.mutate({ item_type: "recommendation", item_id: r.id, ...b })} onClear={(id) => actions.clear.mutate(id)} />
       {handoff && canEdit && (
-        <div className="flex flex-wrap items-center gap-2"><HandoffButton title={r.title} text={improvement} arxivId={arxivId} /><span className="text-xs text-muted">Creates a new workspace for the existing research workflow; nothing runs until you start it.</span></div>
+        <div className="flex flex-wrap items-center gap-2"><HandoffButton title={r.title} text={improvement} arxivId={arxivId} /></div>
       )}
     </Card>
   );
@@ -61,23 +63,22 @@ function Ideas({ feedback, canEdit, actions, arxivId }: { feedback: XFeedback[];
   const ideas = feedback.filter((f) => f.item_type === "idea");
   return (
     <section className="space-y-3" aria-label="Your own ideas">
-      <h2 className="font-display text-lg font-semibold">Your own research ideas ({ideas.length})</h2>
+      <h2 className="font-display text-lg font-semibold">Your ideas ({ideas.length})</h2>
       {canEdit && (
         <Card variant="bento" className="space-y-2 p-4">
           <Input aria-label="Idea title" placeholder="Short title (optional)" value={title} maxLength={140} onChange={(e) => setTitle(e.target.value)} />
-          <Textarea aria-label="Describe your idea" placeholder="Describe the idea you want to explore…" value={text} maxLength={3000} onChange={(e) => setText(e.target.value)} className="min-h-24 text-sm" />
+          <Textarea aria-label="Describe your idea" placeholder="Describe your idea" value={text} maxLength={3000} onChange={(e) => setText(e.target.value)} className="min-h-24 text-sm" />
           <Button size="sm" variant="purple" disabled={!text.trim()} loading={actions.idea.isPending} onClick={() => actions.idea.mutate({ title: title.trim(), text: text.trim() }, { onSuccess: () => { setTitle(""); setText(""); } })}>Add my idea</Button>
         </Card>
       )}
       {ideas.map((i) => (
         <Card key={i.id} variant="bento" className="space-y-2 p-4">
           <div className="flex items-start gap-2"><div className="min-w-0 flex-1"><p className="font-semibold">{i.edited.title || "Untitled idea"}</p><p className="whitespace-pre-wrap text-sm text-ink-soft">{i.edited.text}</p>
-            <p className="mt-1 text-[11px] text-muted">{i.mine ? "Added by you" : "Added by a teammate"} · the Explorer has not checked this idea against the literature</p></div>
+            <p className="mt-1 text-[11px] text-muted">{i.mine ? "Added by you" : "Added by a teammate"}</p></div>
             {i.mine && canEdit && <Button size="icon-sm" variant="ghost" aria-label="Remove this idea" disabled={actions.clear.isPending} onClick={() => actions.clear.mutate(i.id)}><Trash size={15} /></Button>}</div>
           {canEdit && <HandoffButton title={i.edited.title || "My idea"} text={i.edited.text ?? ""} arxivId={arxivId} />}
         </Card>
       ))}
-      {!ideas.length && <p className="text-sm text-muted">Ideas you add here are saved with this analysis. You can hand any of them to the research workflow.</p>}
     </section>
   );
 }
@@ -89,13 +90,13 @@ export function RecommendationsView({ data, feedback, canEdit, actions }: { data
   return (
     <div className="space-y-8">
       {!data.recommendations.length ? (
-        <EmptyState title="No improvement recommendations" body="Recommendations are built from verified research gaps. None could be produced from the papers found; you can still add your own ideas below." />
+        <EmptyState title="No recommendations" body="You can still add your own ideas below." />
       ) : GROUPS.map((g) => {
         const list = data.recommendations.filter((r) => r.category === g.key);
         if (!list.length) return null;
         return (
           <section key={g.key} className="space-y-3" aria-label={g.title}>
-            <div><h2 className="font-display text-lg font-semibold">{g.title} ({list.length})</h2><p className="text-xs text-muted">{g.hint}</p></div>
+            <h2 className="font-display text-lg font-semibold">{g.title} ({list.length}){g.hint && <span className="ml-2 text-xs font-normal text-muted">{g.hint}</span>}</h2>
             {list.map((r) => <RecCard key={r.id} r={r} mine={mine(r.id)} canEdit={canEdit} actions={actions} byId={byId} arxivId={seed?.arxiv_id} />)}
           </section>
         );

@@ -60,11 +60,11 @@ export function PaperDetail({ paper, byId, edges, onSelect, onClose }: { paper: 
 
       <div>
         <p className="text-[11px] font-bold uppercase tracking-wider text-muted">Main contribution{paper.facts_by === "ai" && " (AI summary of the abstract)"}</p>
-        <p className="mt-1 text-sm text-ink-soft">{paper.contribution ?? (paper.has_abstract ? "Not extracted." : "No abstract was available, so the contribution is not summarised.")}</p>
+        <p className="mt-1 text-sm text-ink-soft">{paper.contribution ?? (paper.has_abstract ? "Not extracted." : "No abstract.")}</p>
       </div>
       {paper.methodology.length > 0 && <div className="flex flex-wrap gap-1.5">{paper.methodology.map((m) => <Badge key={m} tone="cream">{m}</Badge>)}</div>}
 
-      <Facts title="Reported limitations" items={paper.limitations} empty={paper.has_abstract ? "None stated in the abstract. This does not mean there are none." : "No abstract available."} />
+      <Facts title="Reported limitations" items={paper.limitations} empty={paper.has_abstract ? "None stated." : "No abstract."} />
       <Facts title="Future work mentioned" items={paper.future_work} empty="None stated in the abstract." />
       {paper.datasets.length > 0 && <Facts title="Datasets" items={paper.datasets} empty="" />}
       {paper.metrics.length > 0 && <Facts title="Reported metrics" items={paper.metrics} empty="" />}

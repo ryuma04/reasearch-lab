@@ -41,7 +41,7 @@ export function ExplorerPage({ workspaceId }: { workspaceId: string }) {
   };
 
   if (ws.isPending) return <Skeleton className="h-64" />;
-  if (!runId) return <EmptyState title="Start a research run first" body="The Gap Explorer builds on a paper the Research Agent has analysed. Upload a paper and start a run to begin." action={<Button asChild><Link href={`/workspaces/${workspaceId}`}>Open the workspace</Link></Button>} />;
+  if (!runId) return <EmptyState title="Start a research run first" body="Upload a paper and start a run first." action={<Button asChild><Link href={`/workspaces/${workspaceId}`}>Open the workspace</Link></Button>} />;
   if (q.isPending) return <div className="space-y-3"><Skeleton className="h-24" /><Skeleton className="h-96" /></div>;
   if (q.error) return <ErrorState error={q.error} title="Research Gap Explorer" onRetry={() => void q.refetch()} />;
 
@@ -53,9 +53,8 @@ export function ExplorerPage({ workspaceId }: { workspaceId: string }) {
   const Header = (
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="max-w-3xl">
-        <p className="text-xs font-bold uppercase tracking-[0.14em] text-purple-deep">Research Gap Explorer</p>
-        <h2 className="mt-1 font-display text-2xl font-semibold">Where does this research sit, and what is still open?</h2>
-        <p className="mt-1 text-sm text-ink-soft">Finds earlier and related studies, compares the approaches, and proposes evidence-backed gaps and improvements for the paper you uploaded. It reads the Research Agent&apos;s analysis and changes nothing in your research run.</p>
+        <h2 className="font-display text-2xl font-semibold">Research Gap Explorer</h2>
+        <p className="mt-1 text-sm text-ink-soft">Related work, comparison, gaps and ideas for your paper.</p>
       </div>
       {ready && canEdit && analysis && !running && (
         <Button variant="secondary" loading={actions.start.isPending} onClick={start}><ArrowsClockwise size={16} /> Refresh analysis</Button>
@@ -66,8 +65,8 @@ export function ExplorerPage({ workspaceId }: { workspaceId: string }) {
   if (!ready) {
     return (
       <div className="space-y-5">{Header}
-        <EmptyState title="The paper has not been analysed yet" body="The Gap Explorer starts from the Research Agent's analysis of your paper. Open the research workflow and let the research stage finish, then come back."
-          action={<Button asChild variant="purple"><Link href={`/workspaces/${workspaceId}/run/${runId}`}>Open the research workflow</Link></Button>} />
+        <EmptyState title="Paper not analysed yet" body="Let the research step finish first."
+          action={<Button asChild variant="purple"><Link href={`/workspaces/${workspaceId}/run/${runId}`}>Open the workflow</Link></Button>} />
       </div>
     );
   }
@@ -76,8 +75,8 @@ export function ExplorerPage({ workspaceId }: { workspaceId: string }) {
       <div className="space-y-5">{Header}
         <Card variant="bento" className="space-y-3 p-6">
           <p className="font-display text-lg font-semibold">Ready to explore “{ws.data?.title}”</p>
-          <p className="text-sm text-ink-soft">This searches Semantic Scholar, OpenAlex, Crossref and arXiv for related research and reads their abstracts. It usually takes one to three minutes and runs in the background, so you can leave this page.</p>
-          {canEdit ? <Button variant="purple" size="lg" loading={actions.start.isPending} onClick={start}>Analyse the research landscape</Button> : <p className="text-sm font-semibold text-muted">Only an owner or editor can start the analysis.</p>}
+          <p className="text-sm text-ink-soft">Searches Semantic Scholar, OpenAlex, Crossref and arXiv. Takes 1 to 3 minutes.</p>
+          {canEdit ? <Button variant="purple" size="lg" loading={actions.start.isPending} onClick={start}>Start analysis</Button> : <p className="text-sm font-semibold text-muted">View only.</p>}
         </Card>
       </div>
     );
@@ -89,12 +88,12 @@ export function ExplorerPage({ workspaceId }: { workspaceId: string }) {
       {running && (
         <Card variant="bento" className="flex items-center gap-3 p-4" role="status" aria-live="polite">
           <Spinner className="h-5 w-5" />
-          <div><p className="font-semibold">Analysing the research landscape…</p><p className="text-sm text-ink-soft">{analysis.stage || "Working"}. This continues in the background if you leave.</p></div>
+          <div><p className="font-semibold">Analysing</p><p className="text-sm text-ink-soft">{analysis.stage || "Working"}</p></div>
         </Card>
       )}
       {analysis.status === "failed" && (
         <Card variant="bento" className="space-y-2 border-danger/40 p-4" role="alert">
-          <p className="flex items-center gap-2 font-semibold text-danger"><WarningCircle size={18} weight="fill" /> The analysis could not be completed</p>
+          <p className="flex items-center gap-2 font-semibold text-danger"><WarningCircle size={18} weight="fill" /> Analysis failed</p>
           <p className="text-sm text-ink-soft">{analysis.error || "Something went wrong."}</p>
           {canEdit && <Button variant="purple" size="sm" loading={actions.start.isPending} onClick={start}>Try again</Button>}
         </Card>
@@ -104,11 +103,11 @@ export function ExplorerPage({ workspaceId }: { workspaceId: string }) {
         <>
           {!!data.warnings?.length && (
             <details className="rounded-xl border border-warning/40 bg-warning-soft px-4 py-2 text-sm">
-              <summary className="cursor-pointer font-semibold text-warning">{data.warnings.length} note{data.warnings.length === 1 ? "" : "s"} about this analysis</summary>
+              <summary className="cursor-pointer font-semibold text-warning">{data.warnings.length} note{data.warnings.length === 1 ? "" : "s"}</summary>
               <ul className="mt-1.5 list-disc space-y-0.5 pl-5 text-ink-soft">{data.warnings.map((w) => <li key={w}>{w}</li>)}</ul>
             </details>
           )}
-          <p className="text-xs text-muted">{data.limits.papers_found} papers · {data.limits.with_abstract} with abstracts · from {data.limits.sources.join(", ")} · {data.limits.basis}{analysis.finished_at ? ` · updated ${formatDateTime(analysis.finished_at)}` : ""}</p>
+          <p className="text-xs text-muted">{data.limits.papers_found} papers from {data.limits.sources.join(", ")}{analysis.finished_at ? `, updated ${formatDateTime(analysis.finished_at)}` : ""}</p>
 
           <div role="tablist" aria-label="Explorer views" className="flex gap-1 overflow-x-auto rounded-full bg-white p-1 shadow-clay-sm">
             {VIEWS.map(({ key, label, short, Icon }) => (
@@ -129,7 +128,7 @@ export function ExplorerPage({ workspaceId }: { workspaceId: string }) {
           </div>
         </>
       ) : !running && analysis.status === "done" ? (
-        <EmptyState title="Nothing to show" body="The analysis finished without finding related research." />
+        <EmptyState title="Nothing to show" body="No related research found." />
       ) : null}
     </div>
   );

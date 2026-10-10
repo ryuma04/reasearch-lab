@@ -143,12 +143,12 @@ export function ResearchGraph({ papers, edges, selected, onSelect }: {
                 <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
                   <span className={cn("rounded-full px-2 py-0.5 font-bold", p.is_seed ? "bg-purple text-white" : "bg-ink/5 text-ink-soft")}>{RELATION_LABEL[p.relation]}</span>
                   {p.category && <span className="rounded-full bg-lavender-soft px-2 py-0.5 font-semibold text-purple-deep">{p.category}</span>}
-                  {(links.get(p.id) ?? 0) > 0 && <span className="text-muted">{links.get(p.id)} citation link{links.get(p.id) === 1 ? "" : "s"}</span>}
+                  {(links.get(p.id) ?? 0) > 0 && <span className="text-muted">{links.get(p.id)} link{links.get(p.id) === 1 ? "" : "s"}</span>}
                 </div>
                 <p className="mt-2 font-display text-[15px] font-bold leading-snug">{p.title}</p>
                 <p className="mt-1 text-xs text-ink-soft">{authorsLine(p)}<span className="text-muted"> ({p.year ?? "year not reported"})</span></p>
                 <p className={cn("mt-2 text-[13px] leading-relaxed text-ink-soft", !on && "line-clamp-3")}>
-                  {p.abstract ?? <span className="italic text-muted">No abstract available from the sources.</span>}
+                  {p.abstract ?? <span className="italic text-muted">No abstract</span>}
                 </p>
                 <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-line/60 pt-2.5 text-xs">
                   {pLinks.length > 0 ? (

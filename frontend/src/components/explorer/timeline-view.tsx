@@ -47,7 +47,7 @@ export function TimelineView({ data }: { data: XData }) {
             <MagnifyingGlass size={15} className="text-muted" />
             <input value={filters.query} onChange={(e) => set("query", e.target.value)} placeholder="Search titles and contributions" aria-label="Search the timeline" className="w-full bg-transparent outline-none" />
           </label>
-          <span className="text-xs text-muted" aria-live="polite">Showing {visible.length} of {data.papers.length} papers</span>
+          <span className="text-xs text-muted" aria-live="polite">{visible.length} of {data.papers.length} papers</span>
           {nFilters > 0 && <button type="button" onClick={() => setFilters(NO_FILTERS)} className="rounded-full bg-lavender-soft px-3 py-1.5 text-xs font-semibold text-purple-deep">Reset {nFilters} filter{nFilters === 1 ? "" : "s"}</button>}
         </div>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
@@ -153,14 +153,14 @@ export function TimelineView({ data }: { data: XData }) {
           )}
           <p className="border-t border-line-cool px-4 py-2 text-[11px] text-muted">
             {mode === "graph"
-              ? "Papers run from oldest at the top to newest at the bottom. Select a paper to highlight the papers it cites or is cited by. Links come only from reference lists: no link means no citation was found, not that the papers are unrelated."
-              : "Columns are publication years. An arrow runs from the earlier paper to the later paper that cites it, and appears only where a reference list says so: no arrow means no citation was found, not that the papers are unrelated."}
+              ? "Oldest at the top. Click a paper to highlight its citations."
+              : "Arrows show citations from reference lists."}
           </p>
         </Card>
 
         <Card variant="bento" className="h-fit p-5 xl:sticky xl:top-20">
           {selected ? <PaperDetail paper={selected} byId={byId} edges={data.edges} onSelect={setSel} onClose={() => setSel(null)} /> : (
-            <p className="text-sm text-muted">Select a paper on the timeline to read its contribution, limitations and sources, and to open the original publication.</p>
+            <p className="text-sm text-muted">Select a paper to see details.</p>
           )}
         </Card>
       </div>
