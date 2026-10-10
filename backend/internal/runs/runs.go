@@ -126,9 +126,13 @@ func (s *Service) Start(w http.ResponseWriter, r *http.Request) error {
 	if n == 0 {
 		return httpx.Errorf(http.StatusBadRequest, "upload at least one research paper before starting a run")
 	}
-	run, err := s.store.CreateRun(ctx, wsID, budget)
+	run, created, err := s.store.CreateRunIfIdle(ctx, wsID, budget)
 	if err != nil {
 		return err
+	}
+	if !created { // a run is already active in this workspace: return it instead of starting a second one
+		httpx.JSON(w, http.StatusOK, run)
+		return nil
 	}
 	if err := s.bus.Enqueue(ctx, map[string]any{"type": "start_run", "run_id": run.ID, "user_id": auth.UserID(ctx)}); err != nil {
 		_ = s.store.SetRunStatus(ctx, run.ID, "failed", "", "could not queue the run: "+err.Error())

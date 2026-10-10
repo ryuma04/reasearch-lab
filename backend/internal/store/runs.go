@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -38,6 +39,33 @@ func scanRun(row interface{ Scan(...any) error }) (*Run, error) {
 func (s *Store) CreateRun(ctx context.Context, wsID int64, budget string) (*Run, error) {
 	return scanRun(s.Pool.QueryRow(ctx, `
 		INSERT INTO runs (workspace_id, compute_budget) VALUES ($1, $2) RETURNING `+runCols, wsID, budget))
+}
+
+// CreateRunIfIdle starts a main run unless the workspace already has one that is queued, running, waiting for approval
+// or paused; in that case it returns that run (created == false). The workspace row is locked while it decides, so two
+// clicks, two tabs or a retry after a timeout can never create two runs.
+func (s *Store) CreateRunIfIdle(ctx context.Context, wsID int64, budget string) (run *Run, created bool, err error) {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op after Commit
+	if _, err = tx.Exec(ctx, `SELECT 1 FROM workspaces WHERE id=$1 FOR UPDATE`, wsID); err != nil {
+		return nil, false, err
+	}
+	active, err := scanRun(tx.QueryRow(ctx, `SELECT `+runCols+` FROM runs
+		WHERE workspace_id=$1 AND kind='main' AND status IN ('queued','running','waiting_approval','paused') ORDER BY id DESC LIMIT 1`, wsID))
+	if err == nil {
+		return active, false, nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return nil, false, err
+	}
+	run, err = scanRun(tx.QueryRow(ctx, `INSERT INTO runs (workspace_id, compute_budget) VALUES ($1, $2) RETURNING `+runCols, wsID, budget))
+	if err != nil {
+		return nil, false, err
+	}
+	return run, true, tx.Commit(ctx)
 }
 
 func (s *Store) RunByID(ctx context.Context, id int64) (*Run, error) {

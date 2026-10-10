@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+import time
 from typing import TypedDict
 
 from langgraph.checkpoint.postgres import PostgresSaver
@@ -435,16 +437,47 @@ def _unpooled(url: str) -> str:
     return os.environ.get("LANGGRAPH_DATABASE_URL") or url.replace("-pooler.", ".", 1)
 
 
+_graph_lock = threading.Lock()
+SETUP_LOCK_ID = 7_440_321  # Postgres advisory lock: one process at a time creates the checkpoint schema and tables
+
+
+def _build_graph():
+    # LangGraph's own tables (checkpoints, checkpoint_writes, ...) live in a separate schema so they
+    # never clash with the application's tables (we have our own approval "checkpoints" table).
+    cp_pool = ConnectionPool(_unpooled(cfg.database_url), min_size=1, max_size=6,
+                             kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row,
+                                     "options": "-c search_path=langgraph"})
+    saver = PostgresSaver(cp_pool)
+    # Two workers starting at once (or two processes on a fresh database) used to collide in CREATE SCHEMA / the
+    # table migrations. The lock makes the first one create everything and the others find it already there.
+    with cp_pool.connection() as lock_conn:
+        _acquire_setup_lock(lock_conn)
+        try:
+            lock_conn.execute("CREATE SCHEMA IF NOT EXISTS langgraph")
+            saver.setup()
+        finally:
+            lock_conn.execute("SELECT pg_advisory_unlock(%s)", (SETUP_LOCK_ID,))
+    return build(saver)
+
+
+def _acquire_setup_lock(conn, timeout: float = 180.0) -> None:
+    """Take the setup lock by polling pg_try_advisory_lock. A blocking pg_advisory_lock would leave a statement open while it
+    waits, and the library's CREATE INDEX CONCURRENTLY (run by the process holding the lock) waits for every open statement:
+    the two would wait for each other forever."""
+    deadline = time.time() + timeout
+    while True:
+        row = conn.execute("SELECT pg_try_advisory_lock(%s) AS got", (SETUP_LOCK_ID,)).fetchone()
+        if row and (row["got"] if isinstance(row, dict) else row[0]):
+            return
+        if time.time() > deadline:
+            raise RuntimeError("timed out waiting for another process to finish creating the checkpoint tables")
+        time.sleep(0.5)
+
+
 def get_graph():
     global _graph
     if _graph is None:
-        # LangGraph's own tables (checkpoints, checkpoint_writes, ...) live in a separate schema so they
-        # never clash with the application's tables (we have our own approval "checkpoints" table).
-        db.ex("CREATE SCHEMA IF NOT EXISTS langgraph")
-        cp_pool = ConnectionPool(_unpooled(cfg.database_url), min_size=1, max_size=6,
-                                 kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row,
-                                         "options": "-c search_path=langgraph"})
-        saver = PostgresSaver(cp_pool)
-        saver.setup()
-        _graph = build(saver)
+        with _graph_lock:  # worker threads share one graph: build it exactly once per process
+            if _graph is None:
+                _graph = _build_graph()
     return _graph

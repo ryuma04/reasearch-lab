@@ -252,7 +252,7 @@ def extract(run_id: int, doc: PaperDoc, note: str) -> dict:
             value = float(c["value"])
         except (TypeError, ValueError, KeyError):
             continue
-        quotes = c.get("quotes") or [c.get("quote", "")]
+        quotes = [_text(q) for q in (c.get("quotes") or [c.get("quote")])] or [""]
         page, pos, found = locate(doc, quotes, value)
         verified = bool(found) or not (doc.pages or doc.latex)
         if not found and (doc.pages or doc.latex):
@@ -264,15 +264,38 @@ def extract(run_id: int, doc: PaperDoc, note: str) -> dict:
         row = db.q1("""INSERT INTO claims (paper_id, metric_name, description, value, unit, higher_is_better, tolerance,
                                            page, table_ref, position_on_page, condition, quote)
                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
-                    (doc.id, _slug(c.get("metric_name") or c.get("description", "")), c.get("description", ""), value,
-                     c.get("unit", ""), bool(c.get("higher_is_better", False)), float(c.get("tolerance", 0.10)),
-                     page or c.get("page"), c.get("table_ref", ""), db.J(pos) if pos else None,
-                     c.get("condition", "") + ("" if verified else " (not verified: paper text unavailable)"),
-                     found or (quotes[0] if quotes else "")))
+                    claim_params(doc.id, c, value, page, pos, found, quotes, verified))
         saved.append(row)
     info["claims"] = saved
     db.ex("UPDATE papers SET title=%s, summary=%s WHERE id=%s", (info.get("title") or doc.title, info.get("summary", ""), doc.id))
     return info
+
+
+def _text(v) -> str:
+    """A model often answers null for a field it cannot fill; the database columns are NOT NULL text."""
+    return "" if v is None else str(v).strip()
+
+
+def _int_or_none(v) -> int | None:
+    if isinstance(v, bool) or v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return int(v)
+    m = re.search(r"\d+", str(v))  # "p. 4", "Table 2, page 4"
+    return int(m.group(0)) if m else None
+
+
+def claim_params(paper_id: int, c: dict, value: float, page, pos, found, quotes, verified: bool) -> tuple:
+    """Parameters of the claims INSERT, with every model-supplied field made safe (null, wrong type) before it reaches the database."""
+    try:
+        tol = float(c.get("tolerance") or 0.10)
+    except (TypeError, ValueError):
+        tol = 0.10
+    first_quote = _text(quotes[0]) if quotes else ""
+    return (paper_id, _slug(_text(c.get("metric_name")) or _text(c.get("description"))), _text(c.get("description")), value,
+            _text(c.get("unit")), c.get("higher_is_better") is True or str(c.get("higher_is_better")).lower() == "true", tol,
+            page or _int_or_none(c.get("page")), _text(c.get("table_ref")), db.J(pos) if pos else None,
+            _text(c.get("condition")) + ("" if verified else " (not verified: paper text unavailable)"), _text(found) or first_quote)
 
 
 def _slug(s: str) -> str:
@@ -295,7 +318,7 @@ def _extract_llm(doc: PaperDoc, note: str) -> tuple[dict, list[dict]]:
         return _extract_heuristic(doc)
     claims = data.get("claims") or []
     for c in claims:
-        c["quotes"] = [c.get("quote", "")]
+        c["quotes"] = [_text(c.get("quote"))]
     info = {k: data.get(k) for k in ("title", "summary", "method", "field", "missing_details", "datasets")}
     info["settings"] = data.get("settings") or []
     return info, claims
