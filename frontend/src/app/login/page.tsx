@@ -3,19 +3,17 @@
 import * as React from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { GithubLogo, ShieldCheck, Warning, CheckCircle } from "@phosphor-icons/react";
+import { Warning, CheckCircle } from "@phosphor-icons/react";
 import { Logo } from "@/components/shell/logo";
 import { Button } from "@/components/ui/button";
 import { Badge, Highlighter } from "@/components/ui/primitives";
-import { authApi, githubLoginUrl } from "@/lib/api/services";
-import { EMAIL_LOGIN, USE_MOCKS } from "@/lib/config";
+import { authApi } from "@/lib/api/services";
 import { safeReturnPath } from "@/lib/utils";
 
 const REASONS: Record<string, { tone: "warning" | "info" | "error"; text: string }> = {
-  session: { tone: "warning", text: "Your session has expired or you are not signed in. Please continue with GitHub." },
+  session: { tone: "warning", text: "Your session has expired or you are not signed in. Please sign in." },
   signed_out: { tone: "info", text: "You have been signed out." },
-  cancelled: { tone: "info", text: "GitHub sign-in was cancelled. You can try again whenever you're ready." },
-  error: { tone: "error", text: "GitHub sign-in failed. Please try again." },
+  error: { tone: "error", text: "Sign-in failed. Please try again." },
 };
 
 function LoginInner() {
@@ -52,17 +50,6 @@ function LoginInner() {
     }
   };
 
-  const start = () => {
-    setRedirecting(true);
-    if (USE_MOCKS) {
-      sessionStorage.removeItem("demo_logged_out");
-      window.location.assign(`/auth/callback?status=success&return_to=${encodeURIComponent(returnTo)}`);
-      return;
-    }
-    // Full-page navigation: the Go backend runs the OAuth dance and sets the session cookie.
-    window.location.assign(githubLoginUrl(returnTo));
-  };
-
   return (
     <div className="grid min-h-dvh lg:grid-cols-[1fr_1.05fr]">
       <aside className="relative hidden overflow-hidden border-r-2 border-ink bg-lavender p-10 lg:flex lg:flex-col">
@@ -86,7 +73,7 @@ function LoginInner() {
         <div className="mx-auto w-full max-w-md py-8">
           <div className="lg:hidden"><Logo /></div>
           <h1 className="mt-10 text-4xl font-normal leading-tight lg:mt-0">Welcome to your <Highlighter>research lab</Highlighter>.</h1>
-          <p className="mt-4 text-ink-soft">Sign in with your email and password, or with GitHub. GitHub also connects the repository where your code, results and logs are pushed — only after you approve (you can connect it later from your profile).</p>
+          <p className="mt-4 text-ink-soft">Sign in with your email and password, or create an account to start your first research workspace.</p>
 
           {msg && (
             <div role={msg.tone === "error" ? "alert" : "status"} className={`mt-6 flex items-start gap-2 rounded-2xl p-3 text-sm font-medium ${msg.tone === "error" ? "bg-danger-soft text-danger" : msg.tone === "warning" ? "bg-warning-soft text-warning" : "bg-info-soft text-info"}`}>
@@ -95,7 +82,7 @@ function LoginInner() {
             </div>
           )}
 
-          {EMAIL_LOGIN && (
+          {(
             <form onSubmit={emailLogin} className="mt-8 space-y-3" noValidate>
               <label className="block text-sm font-semibold">Email
                 <input type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)}
@@ -121,19 +108,9 @@ function LoginInner() {
                   {mode === "register" ? "Sign in" : "Create an account"}
                 </button>
               </p>
-              <p className="text-center text-xs text-muted">or</p>
             </form>
           )}
 
-          <Button size="lg" variant={EMAIL_LOGIN ? "outline" : "primary"} className={EMAIL_LOGIN ? "mt-3 w-full" : "mt-8 w-full"} onClick={start} loading={redirecting}>
-            {!redirecting && <GithubLogo size={20} weight="bold" />} {redirecting ? "Redirecting to GitHub…" : "Continue with GitHub"}
-          </Button>
-
-
-          <ul className="mt-8 space-y-2 text-sm text-muted">
-            <li className="flex gap-2"><ShieldCheck size={18} className="shrink-0 text-success" /> Your GitHub token is encrypted on our server and never sent to the browser.</li>
-            <li className="flex gap-2"><ShieldCheck size={18} className="shrink-0 text-success" /> We ask for profile, email and repository access — you can disconnect anytime.</li>
-          </ul>
           <p className="mt-10 text-sm"><Link href="/" className="font-semibold text-purple-deep underline underline-offset-2">← Back to home</Link></p>
         </div>
       </main>
