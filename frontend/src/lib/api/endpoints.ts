@@ -113,6 +113,14 @@ export const ENDPOINTS = {
   sharedEvents: e("sharedEvents", "GET", "/share/{token}/runs/{runId}/events", "documented"),
   sharedStream: e("sharedStream", "GET", "/share/{token}/runs/{runId}/stream", "documented"),
   sharedScorecard: e("sharedScorecard", "GET", "/share/{token}/runs/{runId}/scorecard", "documented"),
+
+  // Model Context Protocol (MCP) & Assistant
+  assistantTools: e("assistantTools", "GET", "/assistant/tools", "documented"),
+  createAssistantTask: e("createAssistantTask", "POST", "/runs/{id}/assistant/task", "documented"),
+  listAssistantTasks: e("listAssistantTasks", "GET", "/runs/{id}/assistant/tasks", "documented"),
+  getAssistantTask: e("getAssistantTask", "GET", "/assistant/tasks/{taskId}", "documented"),
+  approveAssistantTask: e("approveAssistantTask", "POST", "/assistant/tasks/{taskId}/approve", "documented"),
+  cancelAssistantTask: e("cancelAssistantTask", "POST", "/assistant/tasks/{taskId}/cancel", "documented"),
 } as const satisfies Record<string, EndpointDef>;
 
 export type EndpointKey = keyof typeof ENDPOINTS;

@@ -58,6 +58,13 @@ type Config struct {
 
 	// HFToken is only checked for presence here (the agent worker uploads with it); never logged or sent.
 	HFToken string
+
+	// Claude and Arina AI Orchestration
+	AnthropicAPIKey string
+	ClaudeModel     string
+	ArinaAPIKey     string
+	ArinaBaseURL    string
+	ArinaModel      string
 }
 
 func (c *Config) GitHubConfigured() bool { return c.GitHubClientID != "" && c.GitHubClientSecret != "" }
@@ -108,6 +115,12 @@ func Load() (*Config, error) {
 
 		GitleaksBin:        get("GITLEAKS_BIN", "gitleaks"),
 		HFToken:            get("HF_TOKEN", ""),
+
+		AnthropicAPIKey: get("ANTHROPIC_API_KEY", ""),
+		ClaudeModel:     get("CLAUDE_MODEL", "claude-3-7-sonnet-20250219"),
+		ArinaAPIKey:     get("ARINA_API_KEY", get("ELEVATE_TEAM_API_KEY", "")),
+		ArinaBaseURL:    strings.TrimRight(get("ARINA_BASE_URL", "https://elevate1-0.vercel.app/api/ai"), "/"),
+		ArinaModel:      get("ARINA_MODEL", "gpt-5-mini"),
 	}
 
 	// A relative DATA_DIR is relative to the .env file, so api and agents agree.
@@ -190,30 +203,50 @@ func getBool(key string, def bool) bool {
 
 // loadDotEnv returns the directory the .env file was found in ("" if none).
 func loadDotEnv() string {
-	dir, _ := os.Getwd()
-	for i := 0; i < 4; i++ {
-		f, err := os.Open(filepath.Join(dir, ".env"))
-		if err == nil {
-			defer f.Close()
-			sc := bufio.NewScanner(f)
-			for sc.Scan() {
-				line := strings.TrimSpace(sc.Text())
-				if line == "" || strings.HasPrefix(line, "#") {
-					continue
+	checkDir := func(start string) string {
+		dir := start
+		for i := 0; i < 5; i++ {
+			f, err := os.Open(filepath.Join(dir, ".env"))
+			if err == nil {
+				defer f.Close()
+				sc := bufio.NewScanner(f)
+				for sc.Scan() {
+					line := strings.TrimSpace(sc.Text())
+					if line == "" || strings.HasPrefix(line, "#") {
+						continue
+					}
+					k, v, ok := strings.Cut(line, "=")
+					if !ok {
+						continue
+					}
+					k = strings.TrimSpace(k)
+					v = strings.Trim(strings.TrimSpace(v), `"'`)
+					if _, exists := os.LookupEnv(k); !exists {
+						os.Setenv(k, v)
+					}
 				}
-				k, v, ok := strings.Cut(line, "=")
-				if !ok {
-					continue
-				}
-				k = strings.TrimSpace(k)
-				v = strings.Trim(strings.TrimSpace(v), `"'`)
-				if _, exists := os.LookupEnv(k); !exists {
-					os.Setenv(k, v)
-				}
+				return dir
 			}
-			return dir
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
 		}
-		dir = filepath.Dir(dir)
+		return ""
+	}
+
+	if dir, err := os.Getwd(); err == nil {
+		if found := checkDir(dir); found != "" {
+			return found
+		}
+	}
+
+	if exe, err := os.Executable(); err == nil {
+		if found := checkDir(filepath.Dir(exe)); found != "" {
+			return found
+		}
 	}
 	return ""
 }
+

@@ -316,6 +316,10 @@ func (s *Service) loadExec(ctx context.Context, id int64) (*ExecView, error) {
 	return scanExec(s.store.Pool.QueryRow(ctx, `SELECT `+execCols+` FROM sandbox_execs e JOIN runs r ON r.id=e.run_id WHERE e.id=$1`, id))
 }
 
+func (s *Service) LoadExec(ctx context.Context, id int64) (*ExecView, error) {
+	return s.loadExec(ctx, id)
+}
+
 // execFor loads an execution and checks the user's role in its workspace (404 for non-members).
 func (s *Service) execFor(r *http.Request, minRole string) (*ExecView, error) {
 	id, err := httpx.IDParam(r, "execId")

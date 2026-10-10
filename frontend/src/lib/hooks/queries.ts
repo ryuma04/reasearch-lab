@@ -2,7 +2,7 @@
 
 import { useQuery, type UseQueryOptions } from "@tanstack/react-query";
 import { isApiError } from "@/lib/api/errors";
-import { authApi, githubApi, memoryApi, runApi, sandboxApi, shareApi, teamApi, workspaceApi } from "@/lib/api/services";
+import { assistantApi, authApi, githubApi, memoryApi, runApi, sandboxApi, shareApi, teamApi, workspaceApi } from "@/lib/api/services";
 import type { SandboxExecution } from "@/lib/api/types";
 
 const isLive = (e?: SandboxExecution | null) => e?.status === "running" || e?.status === "queued";
@@ -70,6 +70,9 @@ export const qk = {
   shared: (t: string) => ["share", t] as const,
   sharedEvents: (t: string) => ["share", t, "events"] as const,
   sharedScorecard: (t: string) => ["share", t, "scorecard"] as const,
+  assistantTools: ["assistant", "tools"] as const,
+  assistantTasks: (runId: string) => ["assistant", "tasks", runId] as const,
+  assistantTask: (taskId: string) => ["assistant", "task", taskId] as const,
 };
 
 /** Never retry client errors / missing endpoints; retry transient failures twice. */
@@ -134,3 +137,23 @@ export const useMemorySearch = (q: string) =>
 export const useSharedView = (t: string) => useQuery({ queryKey: qk.shared(t), queryFn: ({ signal }) => shareApi.view(t, signal) });
 export const useSharedScorecard = (t: string, runId: string | null) =>
   useQuery({ queryKey: [...qk.sharedScorecard(t), runId], queryFn: ({ signal }) => shareApi.scorecard(t, runId!, signal), enabled: !!runId });
+
+export const useAssistantTools = () =>
+  useQuery({ queryKey: qk.assistantTools, queryFn: ({ signal }) => assistantApi.listTools(signal), staleTime: 60_000 });
+
+export const useAssistantTasks = (runId: string | null) =>
+  useQuery({
+    queryKey: qk.assistantTasks(runId ?? ""),
+    queryFn: ({ signal }) => assistantApi.listTasks(runId!, signal),
+    enabled: !!runId,
+    refetchInterval: (q) => (q.state.data?.some((t) => t.status === "running" || t.status === "pending" || t.status === "waiting_approval") ? 2000 : 10_000),
+  });
+
+export const useAssistantTask = (taskId: string | null) =>
+  useQuery({
+    queryKey: qk.assistantTask(taskId ?? ""),
+    queryFn: ({ signal }) => assistantApi.getTask(taskId!, signal),
+    enabled: !!taskId,
+    refetchInterval: (q) => (q.state.data?.status === "running" || q.state.data?.status === "pending" ? 1500 : false),
+  });
+

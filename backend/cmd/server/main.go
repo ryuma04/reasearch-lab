@@ -20,6 +20,7 @@ import (
 	"github.com/ryuma04/tapu-sena/backend/internal/explorer"
 	"github.com/ryuma04/tapu-sena/backend/internal/hfpublish"
 	"github.com/ryuma04/tapu-sena/backend/internal/httpx"
+	"github.com/ryuma04/tapu-sena/backend/internal/mcp"
 	"github.com/ryuma04/tapu-sena/backend/internal/proof"
 	"github.com/ryuma04/tapu-sena/backend/internal/ratelimit"
 	"github.com/ryuma04/tapu-sena/backend/internal/runs"
@@ -150,15 +151,12 @@ func run() error {
 		sbx.Routes(r)
 		// Hugging Face Hub publishing (upload runs in the agent worker with the official client).
 		hfpublish.New(cfg, st, b).Routes(r)
-
-		r.Get("/runs/{id}/tests", h(runSvc.Tests))
-		r.Get("/runs/{id}/memory", h(runSvc.RunMemory))
-		r.Get("/agents", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, http.StatusOK, runs.AgentList) })
-		r.Get("/memory/search", h(runSvc.MemorySearch))
-
 		r.Post("/voice/command", h(voiceSvc.Command))
 		r.Post("/voice/text", h(voiceSvc.Text))
 	})
+
+	// MCP tools and AI Orchestration assistant (handles session auth, Bearer tokens and dev access)
+	mcp.NewService(cfg, st, b, sbx).Routes(r)
 
 	// Internal routes: agent worker only (X-Internal-Token)
 	r.Route("/internal", func(r chi.Router) {
