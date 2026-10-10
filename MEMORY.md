@@ -5,7 +5,7 @@
 - **Backend API**: Go 1.26 + Chi router + pgx + go-redis (at `backend/`, port 8080)
 - **AI Agents**: Python 3.13 + FastAPI + LangGraph + LangChain Core (at `agents/`, port 8001)
 - **Infra**: PostgreSQL 16 (pgvector) on port 5433, Redis 7 on port 6379, Docker for sandboxing
-- **Automation**: n8n for GitHub push webhook (optional, `n8n/github-push.json`)
+- **Publishing**: Hugging Face Hub (model card & dataset repository publishing with secret scanning)
 - **Sandbox images**: `infra/sandbox-images/` (Python, R)
 - **Docs**: `docs/` (DESIGN.md, allaboutourproject.md, FRONTEND_INTEGRATION_NOTES.md, plan.html)
 
@@ -15,13 +15,12 @@ tapu-sena/
 ├── frontend/           # Next.js 15 web app (port 3000)
 ├── backend/            # Go API server (port 8080)
 ├── agents/             # Python FastAPI + LangGraph agents (port 8001)
-├── n8n/                # n8n workflow JSON (GitHub push automation)
 ├── infra/
 │   └── sandbox-images/ # Docker images for sandboxed code execution
 ├── audit/              # Complete system audit, test reports, and API contract matrix
 ├── docs/               # Architecture docs, project plan, design spec
 ├── .env.example        # Environment variable template
-├── docker-compose.yml  # Postgres, Redis, n8n, api, agents
+├── docker-compose.yml  # Postgres, Redis
 ├── README.md
 └── MEMORY.md
 ```
@@ -32,7 +31,7 @@ Browser → Next.js (:3000) → Go API (:8080) → FastAPI Agents (:8001)
                                             → PostgreSQL + pgvector
                                             → Redis (jobs/events bus)
                                             → Docker sandbox containers
-                                            → n8n → GitHub
+                                            → Hugging Face Hub
 ```
 
 ## Communication Patterns
@@ -55,3 +54,4 @@ docker compose up -d postgres redis
 
 ## Lessons
 - Docker Desktop on Windows can be slow to start; the named pipe `dockerDesktopLinuxEngine` may not be ready for 60+ seconds after launch.
+- If Git Credential Manager has multiple accounts registered, set `git config credential.https://github.com.username <username>` to prevent interactive popup/hang in non-TTY environments.
