@@ -101,7 +101,7 @@ GAP_ABLATIONS = [
      "why": "the paper jittered input images by up to two pixels"},
 ]
 
-# What-if suggestions the Team Manager can propose on its own.
+# Ready-made what-if suggestions for this paper.
 WHATIF_SUGGESTIONS = [
     "What if the temperature is 2, 5, 10 or 20?",
     "What if we use Fashion-MNIST instead of MNIST?",

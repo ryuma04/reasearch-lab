@@ -16,6 +16,7 @@ from .config import settings
 log = logging.getLogger("lab.bus")
 
 JOBS_KEY = "lab:jobs"
+PROCESSING_KEY = "lab:jobs:processing"  # jobs being handled (see worker.py)
 EVENTS_KEY = "lab:events"
 
 r = redis.Redis.from_url(settings.redis_url, decode_responses=True, socket_timeout=30, socket_connect_timeout=5,

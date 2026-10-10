@@ -1,6 +1,11 @@
 """Job worker: consumes lab:jobs from Redis (pushed by the Go API) and runs them in threads.
 
 Job types: start_run, resume (after a checkpoint), retry, whatif.
+
+Delivery is at-least-once: a job is atomically moved from lab:jobs to lab:jobs:processing
+(BLMOVE) and removed only after it has been handled. Jobs left in the processing list by a
+crashed worker are put back on start; a recovered start_run continues from the last LangGraph
+checkpoint (as a retry) instead of starting the run over.
 """
 from __future__ import annotations
 
@@ -31,6 +36,7 @@ class Worker:
         self._locks_guard = threading.Lock()
 
     def start(self) -> None:
+        self._recover()
         self.thread = threading.Thread(target=self._loop, name="job-consumer", daemon=True)
         self.thread.start()
 
@@ -38,29 +44,60 @@ class Worker:
     def alive(self) -> bool:
         return bool(self.thread and self.thread.is_alive())
 
+    def _recover(self) -> None:
+        """Requeue jobs a previous worker process popped but never finished (single worker process)."""
+        try:
+            moved = 0
+            while True:
+                raw = bus.r.lmove(bus.PROCESSING_KEY, bus.JOBS_KEY, "RIGHT", "RIGHT")
+                if raw is None:
+                    break
+                moved += 1
+            if moved:
+                log.warning("requeued %d unfinished job(s) from a previous worker", moved)
+        except redis.RedisError as e:
+            log.warning("could not recover unfinished jobs: %s", e)
+
     def _loop(self) -> None:
         log.info("worker listening on %s (concurrency %d)", bus.JOBS_KEY, cfg.concurrency)
         while not self.stop.is_set():
             try:
-                item = bus.r.brpop([bus.JOBS_KEY], timeout=5)
+                raw = bus.r.blmove(bus.JOBS_KEY, bus.PROCESSING_KEY, 5, "RIGHT", "LEFT")
             except redis.RedisError as e:
                 log.warning("redis: %s", e)
                 time.sleep(2)
                 continue
-            if not item:
+            if not raw:
                 continue
             try:
-                job = json.loads(item[1])
+                job = json.loads(raw)
             except ValueError:
-                log.warning("bad job: %s", item[1][:200])
+                log.warning("bad job: %s", raw[:200])
+                self._ack(raw)
                 continue
-            self.pool.submit(self._run, job)
+            if job.get("type") == "start_run" and self._has_checkpoint(job):
+                job["type"] = "retry"  # recovered after a crash: continue, do not start over
+            self.pool.submit(self._run, job, raw)
+
+    def _ack(self, raw: str) -> None:
+        try:
+            bus.r.lrem(bus.PROCESSING_KEY, 1, raw)
+        except redis.RedisError as e:
+            log.warning("could not acknowledge job: %s", e)
+
+    @staticmethod
+    def _has_checkpoint(job: dict) -> bool:
+        try:
+            row = db.q1("SELECT status FROM runs WHERE id=%s", (int(job.get("run_id") or 0),))
+            return bool(row and row["status"] not in ("queued",))
+        except Exception:  # noqa: BLE001
+            return False
 
     def _lock(self, run_id: int) -> threading.Lock:
         with self._locks_guard:
             return self.run_locks.setdefault(run_id, threading.Lock())
 
-    def _run(self, job: dict) -> None:
+    def _run(self, job: dict, raw: str | None = None) -> None:
         typ, run_id = job.get("type"), int(job.get("run_id") or 0)
         key = f"{typ}:{run_id}:{time.time():.3f}"
         self.active[key] = job
@@ -75,6 +112,8 @@ class Worker:
         except Exception:  # noqa: BLE001
             log.exception("job failed: %s", job)
         finally:
+            if raw is not None:
+                self._ack(raw)
             self.active.pop(key, None)
             self.processed += 1
 

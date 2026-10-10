@@ -47,7 +47,7 @@ def providers() -> dict:
 
 
 ROLE_MODELS = {
-    "planner": lambda: settings.model_planner,    # Team Manager, Code Writer, Debugger
+    "planner": lambda: settings.model_planner,    # Code Writer, Debugger, test design
     "reviewer": lambda: settings.model_reviewer,  # second opinion
     "writer": lambda: settings.model_writer,      # summaries, explanations
     "fast": lambda: settings.model_fast,          # small decisions

@@ -9,6 +9,7 @@ Run: uvicorn app:app --port 8001   (from agents/)
 from __future__ import annotations
 
 import logging
+import hmac
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -33,7 +34,7 @@ app = FastAPI(title="Research Lab Agents", version="1.0", lifespan=lifespan)
 
 
 def internal(x_internal_token: str = Header(default="")) -> None:
-    if not settings.internal_token or x_internal_token != settings.internal_token:
+    if not settings.internal_token or not hmac.compare_digest(x_internal_token.encode(), settings.internal_token.encode()):
         raise HTTPException(status_code=403, detail="forbidden")
 
 
