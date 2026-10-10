@@ -526,7 +526,9 @@ func ServeDataFile(w http.ResponseWriter, r *http.Request, dataDir, rel, downloa
 	http.ServeFile(w, r, p)
 }
 
-func isLink(v string) bool { return strings.HasPrefix(v, "http://") || strings.HasPrefix(v, "https://") }
+func isLink(v string) bool {
+	return strings.HasPrefix(v, "http://") || strings.HasPrefix(v, "https://")
+}
 
 var arxivIDRe = regexp.MustCompile(`(?i)(?:arxiv\.org/(?:abs|pdf|e-print)/|arxiv:)?\s*((?:\d{4}\.\d{4,5}|[a-z-]+(?:\.[A-Z]{2})?/\d{7})(?:v\d+)?)(?:\.pdf)?/?$`)
 

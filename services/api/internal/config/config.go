@@ -21,6 +21,8 @@ type Config struct {
 	DatabaseURL string
 	RedisURL    string
 	DataDir     string
+	AgentsURL   string // Python FastAPI agent service
+	RateLimits  string // optional per-model overrides
 
 	TokenKey      []byte // 32 bytes, AES-256-GCM
 	SessionSecret []byte
@@ -68,6 +70,8 @@ func Load() (*Config, error) {
 		DatabaseURL: get("DATABASE_URL", "postgres://lab:lab@localhost:5433/lab?sslmode=disable"),
 		RedisURL:    get("REDIS_URL", "redis://localhost:6379/0"),
 		DataDir:     get("DATA_DIR", "./data"),
+		AgentsURL:   strings.TrimRight(get("AGENTS_URL", "http://localhost:8001"), "/"),
+		RateLimits:  get("RATE_LIMITS", ""),
 
 		SessionSecret: []byte(get("SESSION_SECRET", "")),
 		InternalToken: get("INTERNAL_TOKEN", ""),

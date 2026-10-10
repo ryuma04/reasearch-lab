@@ -49,7 +49,10 @@ services:
       DATABASE_URL: postgres://lab:lab@postgres:5432/lab?sslmode=disable
       REDIS_URL: redis://redis:6379/0
       DATA_DIR: /data
+      AGENTS_URL: http://agents:8001
       N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL:-http://n8n:5678/webhook/github-push}
+      # Sandbox containers are started on the host Docker; bind mounts need the host path of ./data
+      SANDBOX_HOST_DATA_DIR: ${HOST_DATA_DIR:-}
     ports:
       - "8080:8080"
     volumes:
@@ -68,6 +71,8 @@ services:
       REDIS_URL: redis://redis:6379/0
       DATA_DIR: /data
       API_INTERNAL_URL: http://api:8080
+    ports:
+      - "8001:8001"
     volumes:
       - ./data:/data
     depends_on:

@@ -1,0 +1,40 @@
+{
+  "name": "GitHub push (research lab)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "github-push",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "a1f0c7f2-5d6b-4f7e-9a51-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "github-push"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Creates one meaningful commit per stage (and what-if branches) with the GitHub git data API,\n// then reports back to the Go backend. The token is only in this execution's memory\n// (the workflow does not save execution data).\nconst p = $input.first().json.body;\nconst gh = async (method, path, body) => this.helpers.httpRequest({\n  method, url: 'https://api.github.com' + path, body, json: true,\n  headers: { Authorization: 'Bearer ' + p.github_token, Accept: 'application/vnd.github+json',\n             'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'research-lab-n8n' },\n});\nconst refSha = async (branch) => (await gh('GET', `/repos/${p.repo}/git/ref/heads/${encodeURIComponent(branch)}`)).object.sha;\nconst callback = async (body) => this.helpers.httpRequest({\n  method: 'POST', url: p.callback_url, json: true, body: { push_id: p.push_id, ...body },\n  headers: { 'X-Internal-Token': p.callback_token },\n});\n\nconst results = [];\ntry {\n  try { await refSha(p.base_branch); }\n  catch (e) { await gh('PUT', `/repos/${p.repo}/contents/.gitkeep`, { message: 'Initialize repository', content: '', branch: p.base_branch }); }\n  for (const c of p.commits) {\n    const branch = c.branch || p.base_branch;\n    let head, created = false;\n    try { head = await refSha(branch); }\n    catch (e) { head = await refSha(c.from_branch || p.base_branch); created = true; }\n    const parent = await gh('GET', `/repos/${p.repo}/git/commits/${head}`);\n    const tree = [];\n    for (const f of c.files) {\n      const blob = await gh('POST', `/repos/${p.repo}/git/blobs`, { content: f.content_base64, encoding: 'base64' });\n      tree.push({ path: f.path, mode: '100644', type: 'blob', sha: blob.sha });\n    }\n    const t = await gh('POST', `/repos/${p.repo}/git/trees`, { base_tree: parent.tree.sha, tree });\n    const commit = await gh('POST', `/repos/${p.repo}/git/commits`, { message: c.message, tree: t.sha, parents: [head] });\n    if (created) await gh('POST', `/repos/${p.repo}/git/refs`, { ref: 'refs/heads/' + branch, sha: commit.sha });\n    else await gh('PATCH', `/repos/${p.repo}/git/refs/heads/${encodeURIComponent(branch)}`, { sha: commit.sha, force: false });\n    results.push({ branch, sha: commit.sha, message: c.message, url: `https://github.com/${p.repo}/commit/${commit.sha}` });\n  }\n  await callback({ status: 'done', repo_url: 'https://github.com/' + p.repo, commits: results });\n} catch (e) {\n  await callback({ status: 'failed', error: String(e.message || e).slice(0, 500), commits: results });\n}\nreturn [{ json: { ok: true, commits: results.length } }];"
+      },
+      "id": "a1f0c7f2-5d6b-4f7e-9a51-000000000002",
+      "name": "Create commits",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Create commits", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveManualExecutions": false
+  },
+  "active": true
+}
