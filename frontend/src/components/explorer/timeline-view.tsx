@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { Card, Input, Select } from "@/components/ui/primitives";
 import { EmptyState } from "@/components/ui/states";
 import { authorsLine, PaperDetail } from "./paper-detail";
+import { ResearchGraph } from "./research-graph";
 
 const REL_STYLE: Record<Relation, string> = {
   seed: "border-purple bg-lavender-soft",
@@ -21,6 +22,7 @@ export function TimelineView({ data }: { data: XData }) {
   const [filters, setFilters] = React.useState<Filters>(NO_FILTERS);
   const [sel, setSel] = React.useState<string | null>(data.seed_id);
   const [scale, setScale] = React.useState(1);
+  const [mode, setMode] = React.useState<"graph" | "columns">("graph");
   const fct = React.useMemo(() => facets(data.papers), [data.papers]);
   const byId = React.useMemo(() => new Map(data.papers.map((p) => [p.id, p])), [data.papers]);
   const visible = React.useMemo(() => data.papers.filter((p) => matches(p, filters)), [data.papers, filters]);
@@ -70,8 +72,20 @@ export function TimelineView({ data }: { data: XData }) {
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
         <Card variant="bento" className="relative overflow-hidden">
+          <div className="flex gap-1 border-b border-line-cool p-2" role="tablist" aria-label="Timeline layout">
+            {([["graph", "Research graph"], ["columns", "Year columns"]] as const).map(([k, label]) => (
+              <button key={k} type="button" role="tab" aria-selected={mode === k} onClick={() => setMode(k)}
+                className={cn("rounded-full px-3.5 py-1.5 text-sm font-semibold", mode === k ? "bg-pill text-white" : "text-ink-soft hover:bg-ink/5")}>
+                {label}
+              </button>
+            ))}
+          </div>
           {visible.length <= 1 && data.papers.length > 1 ? (
             <div className="p-6"><EmptyState title="No papers match these filters" body="Reset the filters to see the whole timeline." /></div>
+          ) : mode === "graph" ? (
+            <div className="max-h-[78vh] overflow-auto">
+              <ResearchGraph papers={visible} edges={data.edges} selected={sel} onSelect={setSel} />
+            </div>
           ) : (
             <>
               <div className="max-h-[72vh] overflow-auto" role="group" aria-label="Research evolution timeline">
@@ -113,7 +127,9 @@ export function TimelineView({ data }: { data: XData }) {
             </>
           )}
           <p className="border-t border-line-cool px-4 py-2 text-[11px] text-muted">
-            Columns are publication years. An arrow runs from the earlier paper to the later paper that cites it, and appears only where a reference list says so: no arrow means no citation was found, not that the papers are unrelated.
+            {mode === "graph"
+              ? "Papers run from oldest at the top to newest at the bottom. Select a paper to highlight the papers it cites or is cited by. Links come only from reference lists: no link means no citation was found, not that the papers are unrelated."
+              : "Columns are publication years. An arrow runs from the earlier paper to the later paper that cites it, and appears only where a reference list says so: no arrow means no citation was found, not that the papers are unrelated."}
           </p>
         </Card>
 

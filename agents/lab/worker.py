@@ -37,6 +37,11 @@ class Worker:
 
     def start(self) -> None:
         self._recover()
+        try:  # Hugging Face uploads whose job was lost in a restart start again
+            from . import hfpublish
+            hfpublish.requeue_stuck()
+        except Exception as e:  # noqa: BLE001
+            log.warning("could not check waiting Hugging Face publications: %s", e)
         self.thread = threading.Thread(target=self._loop, name="job-consumer", daemon=True)
         self.thread.start()
 

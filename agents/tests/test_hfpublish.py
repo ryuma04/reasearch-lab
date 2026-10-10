@@ -195,3 +195,51 @@ def test_missing_token(env):
     object.__setattr__(settings, "hf_token", "")
     hub = FakeHub()
     assert run(hub)["status"] == "failed" and "HF_TOKEN" in env["row"]["error"] and hub.calls == []
+
+
+# ---------- a publication can never hang in "queued" ----------
+
+def test_setup_failure_marks_failed_instead_of_staying_queued(env, monkeypatch):
+    monkeypatch.setitem(sys.modules, "huggingface_hub", None)  # a missing or broken install: import fails
+    out = run(FakeHub())
+    assert out["status"] == "failed" and env["row"]["status"] == "failed" and env["row"]["error"]
+
+
+def test_row_visible_a_moment_late_is_retried(env, monkeypatch):
+    row, seen = dict(env["row"]), []
+
+    class LateDB(type(hfpublish.db)):
+        def q1(self, sql, args):
+            seen.append(1)
+            return None if len(seen) < 2 else row
+
+    late = LateDB(row)
+    monkeypatch.setattr(hfpublish, "db", late)
+    assert run(FakeHub())["status"] == "succeeded" and len(seen) == 2
+
+
+def test_missing_row_is_skipped_quietly(env, monkeypatch):
+    class NoRow(type(hfpublish.db)):
+        def q1(self, sql, args):
+            return None
+
+    monkeypatch.setattr(hfpublish, "db", NoRow({}))
+    assert run(FakeHub())["status"] == "skipped"
+
+
+def test_worker_start_requeues_waiting_publications(monkeypatch):
+    pushed = []
+
+    class DB:
+        def q(self, sql, args):
+            assert "status='queued'" in sql
+            return [{"id": 7, "run_id": 45}]
+
+    class R:
+        def lpush(self, key, value):
+            pushed.append((key, value))
+
+    monkeypatch.setattr(hfpublish, "db", DB())
+    monkeypatch.setattr(bus, "r", R())
+    assert hfpublish.requeue_stuck() == 1
+    assert pushed[0][0] == bus.JOBS_KEY and '"publication_id": 7' in pushed[0][1] and '"hf_publish"' in pushed[0][1]
