@@ -18,6 +18,7 @@ tapu-sena/
 ├── n8n/                # n8n workflow JSON (GitHub push automation)
 ├── infra/
 │   └── sandbox-images/ # Docker images for sandboxed code execution
+├── audit/              # Complete system audit, test reports, and API contract matrix
 ├── docs/               # Architecture docs, project plan, design spec
 ├── .env.example        # Environment variable template
 ├── docker-compose.yml  # Postgres, Redis, n8n, api, agents
