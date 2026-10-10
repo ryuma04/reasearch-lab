@@ -1,0 +1,2098 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>body{margin:0}</style>
+<title>Research Environment Plan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;700;800&family=Poppins:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  --ground: #e4eaf3;
+  --surface: #ffffff;
+  --surface-2: #f6f4fb;
+  --ink: #1c1b2b;
+  --ink-2: #3d3b52;
+  --muted: #676381;
+  --line: #e4e2ee;
+  --accent: #7b5cf0;
+  --accent-ink: #5b3dd6;
+  --accent-soft: #ece5fe;
+  --hero-a: #d6c9fb;
+  --hero-b: #efe9fe;
+  --pill: #ffffff;
+  --code-bg: #f3f1fa;
+  --shadow: 0 24px 48px -30px rgb(62 44 130 / 0.35);
+  --font-display: 'Unbounded', 'Poppins', system-ui, sans-serif;
+  --font-body: 'Poppins', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ground: #111018;
+    --surface: #1a1924;
+    --surface-2: #22202e;
+    --ink: #eceaf6;
+    --ink-2: #cfcbe2;
+    --muted: #a29ebb;
+    --line: #2e2b3d;
+    --accent: #a891f2;
+    --accent-ink: #bba8ff;
+    --accent-soft: #2a2444;
+    --hero-a: #30285a;
+    --hero-b: #1f1b36;
+    --pill: #2b2940;
+    --code-bg: #24222f;
+    --shadow: 0 24px 48px -30px rgb(0 0 0 / 0.7);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ground: #111018;
+  --surface: #1a1924;
+  --surface-2: #22202e;
+  --ink: #eceaf6;
+  --ink-2: #cfcbe2;
+  --muted: #a29ebb;
+  --line: #2e2b3d;
+  --accent: #a891f2;
+  --accent-ink: #bba8ff;
+  --accent-soft: #2a2444;
+  --hero-a: #30285a;
+  --hero-b: #1f1b36;
+  --pill: #2b2940;
+  --code-bg: #24222f;
+  --shadow: 0 24px 48px -30px rgb(0 0 0 / 0.7);
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.7;
+  padding-inline: 16px;
+  -webkit-font-smoothing: antialiased;
+}
+.shell {
+  max-width: 1280px;
+  margin-inline: auto;
+  padding-block: 24px 64px;
+  display: grid;
+  gap: 24px;
+}
+.toc { display: none; }
+.doc {
+  min-width: 0;
+  background: var(--surface);
+  border-radius: 32px;
+  padding: clamp(18px, 4.5vw, 56px);
+  box-shadow: var(--shadow);
+}
+.hero {
+  display: grid;
+  gap: 18px;
+  padding: clamp(22px, 4vw, 40px);
+  border-radius: 28px;
+  background: linear-gradient(140deg, var(--hero-a), var(--hero-b));
+}
+.hero-top { display: flex; align-items: center; gap: 14px; }
+.mark { width: 52px; height: 52px; flex: none; filter: drop-shadow(0 8px 12px rgb(106 72 228 / 0.35)); }
+.eyebrow {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+.hero h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(38px, 7vw, 64px);
+  line-height: 1;
+  letter-spacing: -0.045em;
+}
+.tagline {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(17px, 2.4vw, 22px);
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+.summary { margin: 0; max-width: 64ch; color: var(--ink-2); }
+.row-label {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.journey { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 4px; margin: 0; padding: 0; list-style: none; }
+.journey .step { padding: 3px 12px; border-radius: 999px; background: var(--pill); font-size: 13px; font-weight: 500; }
+.journey .arrow { color: var(--muted); font-size: 13px; padding-inline: 2px; }
+.stack { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.stack li {
+  padding: 3px 11px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--accent) 40%, transparent);
+  color: var(--accent-ink);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.toc-mobile {
+  margin-top: 20px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--surface-2);
+}
+.toc-mobile summary {
+  cursor: pointer;
+  padding: 14px 18px;
+  font-weight: 600;
+  list-style: none;
+}
+.toc-mobile summary::-webkit-details-marker { display: none; }
+.toc-mobile summary::after { content: '+'; float: right; color: var(--muted); font-weight: 500; }
+.toc-mobile[open] summary::after { content: '\2212'; }
+.toc-mobile ol, .toc ol { list-style: none; margin: 0; padding: 0 8px 10px; display: grid; gap: 2px; }
+.toc-mobile a, .toc a {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  color: var(--ink-2);
+  text-decoration: none;
+  font-size: 14px;
+  line-height: 1.35;
+}
+.toc-mobile a:hover, .toc a:hover { background: var(--accent-soft); }
+.n { color: var(--muted); font-variant-numeric: tabular-nums; }
+.toc a[aria-current="true"] { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
+.toc a[aria-current="true"] .n { color: var(--accent-ink); }
+.prose { margin-top: 12px; }
+.prose > * { max-width: 74ch; }
+.prose > .table-wrap, .prose > pre { max-width: none; }
+.prose h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 64px 0 16px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(21px, 3vw, 28px);
+  line-height: 1.2;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+  scroll-margin-top: 24px;
+}
+.prose h2 .sec {
+  flex: none;
+  min-width: 2.1em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-size: 0.58em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  transform: translateY(-0.2em);
+}
+.prose h3 { margin: 36px 0 10px; font-size: 19px; font-weight: 600; line-height: 1.35; letter-spacing: -0.01em; text-wrap: balance; scroll-margin-top: 24px; }
+.prose h4 { margin: 24px 0 8px; font-size: 16px; font-weight: 600; }
+.prose p { margin: 0 0 14px; }
+.prose ul, .prose ol { margin: 0 0 16px; padding-left: 22px; }
+.prose li { margin: 4px 0; }
+.prose li > ul, .prose li > ol { margin: 4px 0 6px; }
+.prose li::marker { color: var(--accent); }
+.prose strong { font-weight: 600; }
+.prose a { color: var(--accent-ink); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.prose a:focus-visible, .toc a:focus-visible, .toc-mobile a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.prose code { font-family: var(--font-mono); font-size: 0.86em; padding: 1px 6px; border-radius: 6px; background: var(--code-bg); overflow-wrap: anywhere; }
+.prose pre {
+  margin: 0 0 18px;
+  padding: 18px 20px;
+  border-radius: 18px;
+  background: var(--code-bg);
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.prose pre code { padding: 0; background: none; font-size: inherit; overflow-wrap: normal; }
+.prose blockquote { margin: 0 0 18px; padding: 18px 22px; border-radius: 20px; background: var(--accent-soft); }
+.prose blockquote p:last-child, .prose blockquote ol:last-child { margin-bottom: 0; }
+.prose blockquote.ps { background: var(--surface-2); border: 1px solid var(--line); font-size: 15px; }
+.ps-label { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.table-wrap { margin: 0 0 20px; border: 1px solid var(--line); border-radius: 18px; overflow-x: auto; }
+.table-wrap table { width: 100%; min-width: 580px; border-collapse: collapse; font-size: 14px; line-height: 1.55; font-variant-numeric: tabular-nums; }
+.table-wrap th, .table-wrap td { padding: 11px 14px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+.table-wrap th { background: var(--surface-2); font-size: 13px; font-weight: 600; }
+.table-wrap tr:last-child td { border-bottom: 0; }
+.prose li:has(> input[type="checkbox"]) { position: relative; list-style: none; margin-left: -22px; padding-left: 30px; }
+.prose li > input[type="checkbox"] {
+  position: absolute;
+  left: 0;
+  top: 5px;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  appearance: none;
+  border: 2px solid var(--accent);
+  border-radius: 6px;
+  background: var(--surface);
+}
+.foot { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+@media (min-width: 1080px) {
+  .shell { grid-template-columns: 256px minmax(0, 1fr); gap: 28px; align-items: start; }
+  .toc {
+    display: block;
+    position: sticky;
+    top: calc(env(safe-area-inset-top, 0px) + 24px);
+    max-height: calc(100vh - 48px);
+    overflow-y: auto;
+    padding: 18px 12px;
+    border-radius: 24px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+  }
+  .toc .row-label { padding: 0 10px; }
+  .toc ol { padding: 0; }
+  .toc a { font-size: 13px; }
+  .toc-mobile { display: none; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}
+
+.hero h1 { font-size: clamp(26px, 7vw, 56px); overflow-wrap: break-word; }
+.prose pre { max-width: 100%; }
+</style>
+</head>
+<body>
+<div class="shell">
+  <nav class="toc" aria-label="Contents">
+    <p class="row-label">Contents</p>
+    <ol>
+<li><a href="#1-the-project-in-one-minute"><span class="n">1</span><span>The project in one minute</span></a></li>
+<li><a href="#2-the-problem-statement-exact-words--simple-explanation"><span class="n">2</span><span>The problem statement (exact words + simple explanation)</span></a></li>
+<li><a href="#3-real-facts-that-prove-the-problem"><span class="n">3</span><span>Real facts that prove the problem</span></a></li>
+<li><a href="#4-who-uses-our-platform"><span class="n">4</span><span>Who uses our platform</span></a></li>
+<li><a href="#5-what-existing-tools-miss"><span class="n">5</span><span>What existing tools miss</span></a></li>
+<li><a href="#6-our-solution-in-simple-terms"><span class="n">6</span><span>Our solution in simple terms</span></a></li>
+<li><a href="#7-the-full-workflow-step-by-step"><span class="n">7</span><span>The full workflow, step by step</span></a></li>
+<li><a href="#8-the-agents-who-does-what"><span class="n">8</span><span>The agents: who does what</span></a></li>
+<li><a href="#9-how-the-agent-team-evolves-the-reward-loop"><span class="n">9</span><span>How the agent team evolves (the reward loop)</span></a></li>
+<li><a href="#10-must-build-features-required-by-the-problem-statement"><span class="n">10</span><span>Must-build features (required by the problem statement)</span></a></li>
+<li><a href="#11-hero-features-our-wow-features"><span class="n">11</span><span>Hero features (our "wow" features)</span></a></li>
+<li><a href="#12-extra-features-if-time-allows"><span class="n">12</span><span>Extra features (if time allows)</span></a></li>
+<li><a href="#13-which-paper-we-demo-and-why"><span class="n">13</span><span>Which paper we demo, and why</span></a></li>
+<li><a href="#14-langgraph-or-langchain-our-choice"><span class="n">14</span><span>LangGraph or LangChain: our choice</span></a></li>
+<li><a href="#15-ai-plan-groq-and-gemini-both-free"><span class="n">15</span><span>AI plan: Groq and Gemini (both free)</span></a></li>
+<li><a href="#16-sandbox-and-compute-plan"><span class="n">16</span><span>Sandbox and compute plan</span></a></li>
+<li><a href="#17-github-integration-and-the-n8n-push"><span class="n">17</span><span>GitHub integration and the n8n push</span></a></li>
+<li><a href="#18-final-tech-stack"><span class="n">18</span><span>Final tech stack</span></a></li>
+<li><a href="#19-system-architecture"><span class="n">19</span><span>System architecture</span></a></li>
+<li><a href="#20-live-events-how-the-screen-stays-updated"><span class="n">20</span><span>Live events: how the screen stays updated</span></a></li>
+<li><a href="#21-folder-structure"><span class="n">21</span><span>Folder structure</span></a></li>
+<li><a href="#22-database-design"><span class="n">22</span><span>Database design</span></a></li>
+<li><a href="#23-api-design-go-backend"><span class="n">23</span><span>API design (Go backend)</span></a></li>
+<li><a href="#24-outside-services-and-their-free-limits"><span class="n">24</span><span>Outside services and their free limits</span></a></li>
+<li><a href="#25-all-screens"><span class="n">25</span><span>All screens</span></a></li>
+<li><a href="#26-ui-and-ux-design-guidance"><span class="n">26</span><span>UI and UX design guidance</span></a></li>
+<li><a href="#27-demo-script-for-the-judges-7-minutes"><span class="n">27</span><span>Demo script for the judges (7 minutes)</span></a></li>
+<li><a href="#28-ppt-round-slide-plan"><span class="n">28</span><span>PPT round: slide plan</span></a></li>
+<li><a href="#29-judge-questions-and-our-answers"><span class="n">29</span><span>Judge questions and our answers</span></a></li>
+<li><a href="#30-build-plan-and-team-roles"><span class="n">30</span><span>Build plan and team roles</span></a></li>
+<li><a href="#31-risks-and-backup-plans"><span class="n">31</span><span>Risks and backup plans</span></a></li>
+<li><a href="#32-cost"><span class="n">32</span><span>Cost</span></a></li>
+<li><a href="#33-notes-from-our-research-on-past-winners"><span class="n">33</span><span>Notes from our research on past winners</span></a></li>
+<li><a href="#34-glossary"><span class="n">34</span><span>Glossary</span></a></li>
+<li><a href="#35-sources"><span class="n">35</span><span>Sources</span></a></li>
+    </ol>
+  </nav>
+  <main class="doc">
+    <header class="hero">
+      <div class="hero-top">
+        <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
+          <defs><linearGradient id="mk" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a58cff"/><stop offset="1" stop-color="#6a48e4"/></linearGradient></defs>
+          <rect x="4" y="4" width="56" height="56" rx="18" fill="url(#mk)"/>
+          <path d="M26 14h12M28 14v12L17 45a4 4 0 0 0 3.5 6h23a4 4 0 0 0 3.5-6L36 26V14" fill="#fff6e6" stroke="#1c1b22" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
+          <path d="M21.5 40h21" stroke="#1c1b22" stroke-width="3" stroke-linecap="round"/>
+          <circle cx="29" cy="45" r="2.4" fill="#6a48e4"/><circle cx="36" cy="44" r="1.8" fill="#6a48e4"/>
+        </svg>
+        <p class="eyebrow">Hackathon project plan · Problem Statement 03 · Updated 10 Oct 2026</p>
+      </div>
+      <h1>An Evolving AI Research Environment</h1>
+      <p class="tagline">Give a paper. An evolving AI team reproduces it, tests it and explains it.</p>
+      <p class="summary">One workspace where a researcher uploads a machine learning paper and a team of AI agents, led by a Team Manager that adds and removes agents as needed, reproduces the key result on a laptop, checks every claim with proof, tests why results differ, tries "what if" ideas, learns from every run, and pushes the complete project to the researcher's GitHub.</p>
+      <div>
+        <p class="row-label">The research journey we cover</p>
+        <ol class="journey">
+          <li class="step">Upload</li><li class="arrow" aria-hidden="true">→</li><li class="step">Read</li><li class="arrow" aria-hidden="true">→</li><li class="step">Find sources</li><li class="arrow" aria-hidden="true">→</li><li class="step">Plan</li><li class="arrow" aria-hidden="true">→</li><li class="step">Approve</li><li class="arrow" aria-hidden="true">→</li><li class="step">Code</li><li class="arrow" aria-hidden="true">→</li><li class="step">Test</li><li class="arrow" aria-hidden="true">→</li><li class="step">Explain gaps</li><li class="arrow" aria-hidden="true">→</li><li class="step">What-if</li><li class="arrow" aria-hidden="true">→</li><li class="step">Learn</li><li class="arrow" aria-hidden="true">→</li><li class="step">Push to GitHub</li>
+        </ol>
+      </div>
+      <div>
+        <p class="row-label">Tech stack · all free</p>
+        <ul class="stack"><li>Next.js</li><li>Tailwind CSS</li><li>Go</li><li>Python</li><li>LangGraph</li><li>PostgreSQL</li><li>Redis</li><li>Docker</li><li>Groq</li><li>Gemini</li><li>n8n</li><li>Excalidraw</li><li>Telegram</li></ul>
+      </div>
+    </header>
+    <details class="toc-mobile">
+      <summary>Contents · 35 sections</summary>
+      <ol>
+<li><a href="#1-the-project-in-one-minute"><span class="n">1</span><span>The project in one minute</span></a></li>
+<li><a href="#2-the-problem-statement-exact-words--simple-explanation"><span class="n">2</span><span>The problem statement (exact words + simple explanation)</span></a></li>
+<li><a href="#3-real-facts-that-prove-the-problem"><span class="n">3</span><span>Real facts that prove the problem</span></a></li>
+<li><a href="#4-who-uses-our-platform"><span class="n">4</span><span>Who uses our platform</span></a></li>
+<li><a href="#5-what-existing-tools-miss"><span class="n">5</span><span>What existing tools miss</span></a></li>
+<li><a href="#6-our-solution-in-simple-terms"><span class="n">6</span><span>Our solution in simple terms</span></a></li>
+<li><a href="#7-the-full-workflow-step-by-step"><span class="n">7</span><span>The full workflow, step by step</span></a></li>
+<li><a href="#8-the-agents-who-does-what"><span class="n">8</span><span>The agents: who does what</span></a></li>
+<li><a href="#9-how-the-agent-team-evolves-the-reward-loop"><span class="n">9</span><span>How the agent team evolves (the reward loop)</span></a></li>
+<li><a href="#10-must-build-features-required-by-the-problem-statement"><span class="n">10</span><span>Must-build features (required by the problem statement)</span></a></li>
+<li><a href="#11-hero-features-our-wow-features"><span class="n">11</span><span>Hero features (our "wow" features)</span></a></li>
+<li><a href="#12-extra-features-if-time-allows"><span class="n">12</span><span>Extra features (if time allows)</span></a></li>
+<li><a href="#13-which-paper-we-demo-and-why"><span class="n">13</span><span>Which paper we demo, and why</span></a></li>
+<li><a href="#14-langgraph-or-langchain-our-choice"><span class="n">14</span><span>LangGraph or LangChain: our choice</span></a></li>
+<li><a href="#15-ai-plan-groq-and-gemini-both-free"><span class="n">15</span><span>AI plan: Groq and Gemini (both free)</span></a></li>
+<li><a href="#16-sandbox-and-compute-plan"><span class="n">16</span><span>Sandbox and compute plan</span></a></li>
+<li><a href="#17-github-integration-and-the-n8n-push"><span class="n">17</span><span>GitHub integration and the n8n push</span></a></li>
+<li><a href="#18-final-tech-stack"><span class="n">18</span><span>Final tech stack</span></a></li>
+<li><a href="#19-system-architecture"><span class="n">19</span><span>System architecture</span></a></li>
+<li><a href="#20-live-events-how-the-screen-stays-updated"><span class="n">20</span><span>Live events: how the screen stays updated</span></a></li>
+<li><a href="#21-folder-structure"><span class="n">21</span><span>Folder structure</span></a></li>
+<li><a href="#22-database-design"><span class="n">22</span><span>Database design</span></a></li>
+<li><a href="#23-api-design-go-backend"><span class="n">23</span><span>API design (Go backend)</span></a></li>
+<li><a href="#24-outside-services-and-their-free-limits"><span class="n">24</span><span>Outside services and their free limits</span></a></li>
+<li><a href="#25-all-screens"><span class="n">25</span><span>All screens</span></a></li>
+<li><a href="#26-ui-and-ux-design-guidance"><span class="n">26</span><span>UI and UX design guidance</span></a></li>
+<li><a href="#27-demo-script-for-the-judges-7-minutes"><span class="n">27</span><span>Demo script for the judges (7 minutes)</span></a></li>
+<li><a href="#28-ppt-round-slide-plan"><span class="n">28</span><span>PPT round: slide plan</span></a></li>
+<li><a href="#29-judge-questions-and-our-answers"><span class="n">29</span><span>Judge questions and our answers</span></a></li>
+<li><a href="#30-build-plan-and-team-roles"><span class="n">30</span><span>Build plan and team roles</span></a></li>
+<li><a href="#31-risks-and-backup-plans"><span class="n">31</span><span>Risks and backup plans</span></a></li>
+<li><a href="#32-cost"><span class="n">32</span><span>Cost</span></a></li>
+<li><a href="#33-notes-from-our-research-on-past-winners"><span class="n">33</span><span>Notes from our research on past winners</span></a></li>
+<li><a href="#34-glossary"><span class="n">34</span><span>Glossary</span></a></li>
+<li><a href="#35-sources"><span class="n">35</span><span>Sources</span></a></li>
+      </ol>
+    </details>
+    <article class="prose">
+<h2 id="1-the-project-in-one-minute"><span class="sec">1</span><span>The project in one minute</span></h2>
+<p>We are building <strong>one web workspace where a researcher gives a machine learning research paper, and a team of AI agents reproduces the paper's main result on a normal laptop, tests it against the paper's own numbers, explains any difference, and tries "what if" ideas.</strong> The final code, results and logs are pushed to the researcher's own GitHub account.</p>
+<p><strong>What the researcher does</strong></p>
+<ul>
+<li>Logs in with GitHub.</li>
+<li>Uploads one or more research papers (PDF or arXiv link). This is required.</li>
+<li>Optionally adds a dataset, a GitHub repository, or a short note.</li>
+<li>Watches the agents work live, approves or changes the plan, and asks "what if" questions, by typing or by voice, from a laptop or a phone.</li>
+</ul>
+<p><strong>What the system does</strong></p>
+<ul>
+<li>A <strong>Team Manager</strong> agent reads the task and decides which skills are needed. It starts with three core agents and creates extra specialist agents only when needed.</li>
+<li>The <strong>Research Agent</strong> reads the paper, pulls out every important number the paper claims, and finds the code, datasets and other sources.</li>
+<li>The <strong>Coding Agent</strong> writes the code, runs it inside a safe sandbox, and fixes its own errors.</li>
+<li>The <strong>Testing Agent</strong> creates test cases, runs them, and compares our results with the paper's results, claim by claim.</li>
+<li>An <strong>Observer Agent</strong> watches all the agents and draws a live, hand-drawn style map (Excalidraw) of what each agent found and did.</li>
+<li>Everything learned (errors, fixes, settings that worked) is saved in a <strong>Lab Memory</strong>, so the next run is faster and makes fewer mistakes.</li>
+</ul>
+<h3 id="our-usp-the-one-thing-that-makes-us-different">Our USP (the one thing that makes us different)</h3>
+<blockquote>
+<p><strong>Every result number on our screen has proof behind it.</strong>
+Existing AI research tools have one serious problem: the AI sometimes writes result numbers that were never actually produced by any experiment. In our system, the AI is never allowed to type a result. Every number comes from a file that the sandboxed code wrote while it ran, and every number is linked to:</p>
+<ol>
+<li>the exact line in the paper (page and table) that it is compared with,</li>
+<li>the exact run, code version and log file that produced it.</li>
+</ol>
+<p>When our number and the paper's number do not match, the system does not guess the reason. It <strong>runs small tests to find the reason</strong>, and then tells the researcher in plain words, for example: "Most of the gap comes from training for 5 epochs instead of the paper's longer training. When we trained longer, the gap fell from 41 errors to 12."</p>
+</blockquote>
+<h2 id="2-the-problem-statement-exact-words--simple-explanation"><span class="sec">2</span><span>The problem statement (exact words + simple explanation)</span></h2>
+<h3 id="21-the-official-problem-statement-exact-text">2.1 The official problem statement (exact text)</h3>
+<blockquote class="ps"><p class="ps-label">Official problem statement · Problem Statement 03</p>
+
+<p><strong>An Evolving AI Research Environment</strong></p>
+
+<p><strong>Background</strong></p>
+
+<p>Machine learning research increasingly spans papers, datasets, code, notebooks, compute platforms, documentation, experiments, collaborators, and countless disconnected applications. Reproducing published work is difficult because implementation details, dependencies, configurations, preprocessing, datasets, and reported results may differ across sources and environments. Even after an experiment runs, researchers repeatedly face debugging, dependency conflicts, data issues, hyperparameter choices, model comparisons, failed experiments, and unanswered "what if" questions. Valuable knowledge from these successes and failures is rarely retained in a way that helps future research. As research scales, the researcher spends increasing time managing the machinery around experimentation rather than investigating the research itself.</p>
+
+<p>AI agents are increasingly capable of reading papers, writing and debugging code, and running experiments. However, most agentic systems still depend on predefined agents, fixed roles, manually designed workflows, and known task boundaries, while every paper and research question needs a different mix of skills. A research environment built on agents therefore requires more than capable individual agents – it requires a system that can dynamically organise, coordinate, evaluate, and evolve its agents around the research itself.</p>
+
+<p><strong>Problem Statement</strong></p>
+
+<p>Build an intelligent research environment, powered by a dynamic team of AI agents, that can support the researcher across the complete lifecycle of machine learning research. The system should be capable of taking a paper, research question, algorithm, dataset, codebase, or experimental idea and working with the information required to turn it into meaningful experimentation. It should be able to execute research across environments such as local machines, Kaggle, Colab, remote servers, or other available compute, while handling the practical problems that arise during execution including dependencies, incompatible environments, data issues, implementation errors, resource constraints, configuration choices, and hyperparameter decisions.</p>
+
+<p>Rather than relying on a fixed set of predefined agents, a meta-controller should determine the capabilities each research task requires – such as reading papers, implementation, environment setup, debugging, experiment design, and analysis – coordinate existing agents, and spawn or adapt new specialised agents when existing capabilities are insufficient. Agents should be evaluated through a meaningful reward loop based on research outcomes, compute cost, and researcher feedback. Agents that consistently produce valuable results should be refined, while those that fail to justify their cost or contribution should be merged, replaced, or retired.</p>
+
+<p>The system should go beyond checking whether a paper can be reproduced. It should be capable of running experiments, observing results, diagnosing failures, repairing and improving implementations, comparing multiple papers or approaches under meaningful conditions, and determining why results differ from reported findings. When a researcher asks questions such as "what if this dataset is changed?", "what if this architecture is modified?", or "what happens under these conditions?", the system should be capable of investigating multiple possibilities rather than requiring every experiment to be manually designed and executed.</p>
+
+<p>Experiments should not exist as isolated runs. What the system learns from successful and failed executions, debugging decisions, configurations, comparisons, and outcomes should remain useful for future research. Over time, the system should become better at deciding what to try, how to execute it, how to recover when it fails, which direction is worth pursuing next, and which agents are best suited to each task.</p>
+
+<p>The research environment should also bring together the surrounding work that normally lives across thousands of tools: discovering and reading papers, managing research notes and Markdown files, working with datasets and code, creating documents and research outputs, maintaining experimental records, and collaborating with other researchers and authors. A researcher should be able to control ongoing work remotely, including through a mobile interface, while longer-running computation and experimentation may continue elsewhere.</p>
+
+<p>The challenge also extends to research autonomy. Multiple possible hypotheses, methods, datasets, or experimental conditions may need to be investigated simultaneously, with the system determining which directions deserve further exploration based on evidence and previous outcomes. The researcher should remain able to inspect, intervene, guide, approve, reject, or redirect this process.</p>
+
+<p>The system should be demonstrated on modest compute, such as a laptop CPU or free-tier Kaggle and Colab, choosing model sizes, dataset subsets, and experiment budgets that still produce meaningful evidence. Participants should take at least one paper – for example from the research directions below, spanning materials science, edge and efficient ML, CPU-scale machine learning, and 3D – reproduce its key result autonomously, investigate at least one meaningful "what if?" extension, and explain where and why their results differ from the paper.</p>
+
+<p>Finally, the system may contain a very large number of concurrent agents, activities, decisions, experiments, resources, documents, and research threads. How these are organised and exposed to the researcher is itself a major part of the challenge. The interface should make clear what the agents are doing, why they are doing it, how they are performing, and how the team is evolving, making a complex autonomous research environment understandable and controllable without reducing the underlying capability to a simple notebook or chat interface.</p>
+
+<p><strong>Core question:</strong> How can you build a single environment where a researcher can conduct, control, and collaborate on their entire research process while an evolving team of AI agents continuously executes, investigates, learns, and improves alongside them?</p>
+
+<p><strong>Suggested research directions</strong> (participants may choose any paper; these are feasible on a CPU or free-tier compute)</p>
+
+<p><strong>Materials science:</strong> CGCNN (Xie &amp; Grossman, 2018) · MEGNet (Chen et al., 2019) · Roost (Goodall &amp; Lee, 2020) · Matbench (Dunn et al., 2020) · CHGNet (Deng et al., 2023, pretrained model on CPU)</p>
+
+<p><strong>Edge and efficient ML:</strong> Quantization and Training of Neural Networks for Efficient Integer-Arithmetic-Only Inference (Jacob et al., 2018) · Distilling the Knowledge in a Neural Network (Hinton, Vinyals &amp; Dean, 2015) · The Lottery Ticket Hypothesis (Frankle &amp; Carbin, 2019) · MobileNetV2 (Sandler et al., 2018) · MCUNet (Lin et al., 2020)</p>
+
+<p><strong>Machine learning on a CPU:</strong> SLIDE (Chen et al., 2020) · Grokking (Power et al., 2022) · KAN: Kolmogorov–Arnold Networks (Liu et al., 2024) · Physics-informed neural networks (Raissi et al., 2019) · TabPFN (Hollmann et al., 2023) · Why do tree-based models still outperform deep learning on tabular data? (Grinsztajn et al., 2022)</p>
+
+<p><strong>3D:</strong> PointNet (Qi et al., 2017) · Dynamic Graph CNN (Wang et al., 2019) · DeepSDF (Park et al., 2019, on a few shapes) · NeRF (Mildenhall et al., 2020, as a low-resolution "tiny NeRF") · Plenoxels (Fridovich-Keil et al., 2022)</p>
+
+</blockquote>
+
+<h3 id="22-the-problem-statement-in-simple-words">2.2 The problem statement in simple words</h3>
+<p>Today, a researcher who wants to check or build on a paper must do a lot of slow, manual work:</p>
+<ol>
+<li>Read the paper and find every small detail (settings, data steps, model size).</li>
+<li>Find the code (if it exists) and the dataset (if it is public).</li>
+<li>Install the right software versions, which often conflict with each other.</li>
+<li>Fix many errors before the code even runs.</li>
+<li>Run the experiment, often on a weak computer.</li>
+<li>Compare their numbers with the paper's numbers, and wonder why they are different.</li>
+<li>Try new ideas ("what if I change the dataset?") one by one, by hand.</li>
+<li>Forget most of what they learned, because it is not saved anywhere useful.</li>
+</ol>
+<p>The problem statement asks us to build <strong>one environment</strong> where a <strong>team of AI agents</strong> does this work with the researcher, and where:</p>
+<ul>
+<li>the team is <strong>not fixed</strong>: a manager decides which agents are needed and can create, improve, merge or remove agents,</li>
+<li>agents are <strong>scored</strong> on results, cost and the researcher's feedback,</li>
+<li>the system <strong>remembers</strong> what it learned and gets better over time,</li>
+<li>the researcher can <strong>see and control</strong> everything, including from a phone.</li>
+</ul>
+<h3 id="23-what-the-judges-will-check-our-checklist">2.3 What the judges will check (our checklist)</h3>
+<p>These lines come directly from the problem statement. Our demo must clearly show each one.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>What the problem statement asks</th>
+<th>Where we show it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Take at least one paper and reproduce its key result <strong>autonomously</strong></td>
+<td>Live run on the Distillation paper (Section 13)</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Investigate at least one meaningful <strong>"what if?"</strong> extension</td>
+<td>What-If Branches (Hero 5)</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Explain <strong>where and why</strong> our results differ from the paper</td>
+<td>Claim Scorecard + Gap Detective (Hero 1 and Hero 3)</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Run on <strong>modest compute</strong> (laptop CPU, free Kaggle/Colab)</td>
+<td>Compute Budget Planner (Hero 8), local Docker sandbox, Kaggle push</td>
+</tr>
+<tr>
+<td>5</td>
+<td>A <strong>meta-controller</strong> that decides needed capabilities and spawns new agents</td>
+<td>Team Manager (Section 8.1)</td>
+</tr>
+<tr>
+<td>6</td>
+<td>A <strong>reward loop</strong> using outcomes, compute cost and researcher feedback</td>
+<td>Agent Scorecard (Section 9)</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Agents are <strong>refined, merged, replaced or retired</strong></td>
+<td>Team Evolution timeline (Section 9)</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Handle <strong>dependencies, errors, data issues, hyperparameters</strong></td>
+<td>Coding Agent repair loop + Environment Fixer specialist</td>
+</tr>
+<tr>
+<td>9</td>
+<td><strong>Compare multiple papers</strong> or approaches</td>
+<td>Paper vs Paper mode (Hero 10)</td>
+</tr>
+<tr>
+<td>10</td>
+<td>Experiments are <strong>not isolated</strong>; learning is kept for the future</td>
+<td>Lab Memory (Hero 6)</td>
+</tr>
+<tr>
+<td>11</td>
+<td>Notes, Markdown, datasets, code, documents, records, <strong>collaboration</strong></td>
+<td>Workspace tabs, notes, shared live view, GitHub push</td>
+</tr>
+<tr>
+<td>12</td>
+<td><strong>Mobile / remote control</strong></td>
+<td>Mobile web app + Telegram bot with voice commands (Hero 9)</td>
+</tr>
+<tr>
+<td>13</td>
+<td>Researcher can <strong>inspect, intervene, approve, reject, redirect</strong></td>
+<td>Approval checkpoints on every important step</td>
+</tr>
+<tr>
+<td>14</td>
+<td>Interface shows <strong>what, why, how well, and how the team evolves</strong> — not just a chat</td>
+<td>Live Agent Board, Research Map, Team Evolution view</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="3-real-facts-that-prove-the-problem"><span class="sec">3</span><span>Real facts that prove the problem</span></h2>
+<p>These facts come from published studies. They show that the problem is real and large.</p>
+<ul>
+<li><strong>70% of researchers have failed to reproduce another scientist's experiment.</strong> This comes from a Nature survey of 1,576 researchers across all sciences.</li>
+<li><strong>Only 6% of 400 papers at top AI conferences shared their code</strong>, and only about one third shared their data (study reported by Science and MIT Technology Review).</li>
+<li>In one study of 18 deep learning papers on recommendation systems, <strong>only 7 could be reproduced</strong> with reasonable effort, and 6 of them could be beaten by much simpler methods.</li>
+<li>In a study of 30 highly cited AI papers, only about <strong>half could be reproduced</strong> even partly.</li>
+<li>Code sharing has improved (papers sharing both code and data went from about 11% in 2014 to about 64% in 2024, according to a 2026 study), but <strong>shared code still has to be installed, fixed and run</strong>, which is where most time is lost.</li>
+<li><strong>AI agents are still weak at this task on their own.</strong> In OpenAI's PaperBench test (20 recent ICML papers), the best AI agent in the original study reproduced only about <strong>21%</strong> of the required work, below human experts.</li>
+<li>An independent review of Sakana's "AI Scientist" found that <strong>42% of its experiments failed because of coding errors</strong>, and some of its written papers contained <strong>result numbers that were made up</strong>.</li>
+<li><strong>Papers with Code, the most used website for linking papers to code, was shut down in July 2025.</strong> Finding the right code and dataset for a paper is now harder.</li>
+</ul>
+<p><strong>What this means for us:</strong> the two biggest pain points are (1) getting the code to actually run, and (2) trusting the result numbers. Our two strongest features target exactly these points: the self-repairing Coding Agent with Lab Memory, and "every number has proof".</p>
+<h2 id="4-who-uses-our-platform"><span class="sec">4</span><span>Who uses our platform</span></h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>User</th>
+<th>What they need</th>
+<th>How we help</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Student researcher</strong> (final year, master's, PhD)</td>
+<td>Reproduce a paper for a project or thesis, with little compute</td>
+<td>Runs on a laptop CPU; explains every step in simple words</td>
+</tr>
+<tr>
+<td><strong>Research lab / professor</strong></td>
+<td>Check if a new paper's claims hold before building on it</td>
+<td>Claim Scorecard with proof; shared live view for the whole lab</td>
+</tr>
+<tr>
+<td><strong>ML engineer in a company</strong></td>
+<td>Decide if a paper's method is worth adopting</td>
+<td>Paper vs Paper comparison on their own dataset</td>
+</tr>
+<tr>
+<td><strong>Paper reviewer / conference reproducibility track</strong></td>
+<td>Quickly check if reported results are believable</td>
+<td>Automatic reproduction report pushed to GitHub</td>
+</tr>
+<tr>
+<td><strong>Paper author</strong></td>
+<td>Show that their paper is reproducible</td>
+<td>Reproducibility badge and public repository</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="5-what-existing-tools-miss"><span class="sec">5</span><span>What existing tools miss</span></h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>What it does well</th>
+<th>What it misses</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>ChatGPT / Gemini chat</strong></td>
+<td>Explains a paper, writes code snippets</td>
+<td>Does not run the code end to end, does not test against the paper, forgets everything</td>
+</tr>
+<tr>
+<td><strong>Google Colab / Kaggle notebooks</strong></td>
+<td>Free compute to run code</td>
+<td>You still write, fix and compare everything by hand</td>
+</tr>
+<tr>
+<td><strong>Sakana AI Scientist</strong></td>
+<td>Writes full research papers automatically</td>
+<td>Many runs fail from code errors; can produce made-up numbers; no live human control</td>
+</tr>
+<tr>
+<td><strong>Agent Laboratory</strong></td>
+<td>Agents for literature review, experiments and report writing</td>
+<td>Fixed pipeline of roles; reviewers found it sometimes swaps models or datasets without reason</td>
+</tr>
+<tr>
+<td><strong>PaperCoder (Paper2Code)</strong></td>
+<td>Turns a paper into a code repository using planning, analysis and coding agents</td>
+<td>Writes code but does not run and debug experiments, compare claims, or learn over time</td>
+</tr>
+<tr>
+<td><strong>PaperBench (OpenAI)</strong></td>
+<td>A benchmark that measures whether agents can reproduce papers</td>
+<td>It is a test, not a tool for researchers</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>The gap:</strong> no tool combines (a) a team of agents that changes based on the paper, (b) real execution on small compute, (c) claim-by-claim checking with proof, (d) testing the reasons for differences, (e) memory that improves future runs, and (f) clear live control for the researcher. That combination is our project.</p>
+<h2 id="6-our-solution-in-simple-terms"><span class="sec">6</span><span>Our solution in simple terms</span></h2>
+<p>Our solution has five parts that work together.</p>
+<ol>
+<li><strong>The Workspace.</strong> The place where the researcher uploads papers, data, code and notes, and later sees all results, notes and history. Each research project is one workspace.</li>
+<li><strong>The Agent Team.</strong> A Team Manager plus three core agents (Research, Coding, Testing), each with two sub-agents, plus specialist agents that are created only when needed, plus an Observer that draws the live map.</li>
+<li><strong>The Sandbox.</strong> A safe, isolated box (a Docker container) where all code is installed, written, run and tested. It has limits on CPU, memory, time and internet access, so nothing can harm the computer.</li>
+<li><strong>The Lab Memory.</strong> A database of everything learned: errors and their fixes, settings that worked, which agent is good at what, and the result of every experiment.</li>
+<li><strong>The Control Room.</strong> The screens (web and mobile) where the researcher watches the agents live, sees why each decision was made, approves or rejects steps, asks "what if" questions, and receives a final report.</li>
+</ol>
+<h2 id="7-the-full-workflow-step-by-step"><span class="sec">7</span><span>The full workflow, step by step</span></h2>
+<p>This is exactly what happens from start to end.</p>
+<p><strong>Step 1: Log in.</strong> The researcher logs in with GitHub. This one step also connects GitHub, so the system already knows where to push the final code. (If they skip it, the system asks them to connect GitHub before any push.)</p>
+<p><strong>Step 2: Create a workspace and upload.</strong>
+- <strong>Required:</strong> one or more research papers (PDF file or arXiv link). For the demo we use one paper; for comparison mode we use two.
+- <strong>Optional:</strong> a dataset (file or link), a GitHub repository link, and a short note (for example "I only have a laptop, keep it under 15 minutes" or "focus on Table 2").
+- The researcher also picks a compute budget: "Quick (about 5 minutes)", "Standard (about 15 minutes)" or "Deep (Kaggle GPU)".</p>
+<p><strong>Step 3: A new tab opens: the Live Agent Board.</strong> The researcher sees each agent as a card with its current task in one simple sentence, for example "Reading page 4: training settings" or "Installing PyTorch 2.3".</p>
+<p><strong>Step 4: The Team Manager plans.</strong> It reads a quick summary of the paper and makes a <strong>skills list</strong> (for example: "load MNIST", "train a small neural network", "soft-target loss with temperature", "count test errors"). It checks which agents already have these skills, and creates specialist agents for any missing skill.</p>
+<p><strong>Step 5: The Research Agent works.</strong>
+- Sub-agent 1 (Paper Reader) extracts the text, tables, equations and figures, and lists every result the paper claims (the <strong>Claims List</strong>), with page numbers.
+- Sub-agent 2 (Source Finder) finds and checks the official code, datasets and pretrained models (or studies the ones the user uploaded).
+- Output: a <strong>Research Brief</strong> — what the paper does, the exact settings, the Claims List, the sources found, missing details, and a recommendation (for example "the official code exists but needs an old library version; we recommend a clean re-implementation").</p>
+<p><strong>Step 6: Checkpoint 1 — the Research Map and plan approval.</strong> Before any code is written, the researcher sees the <strong>Research Map</strong> (an Excalidraw-style drawing made by the Observer Agent) showing the paper, its claims, the sources found and how they connect. The researcher can approve the plan, edit it ("use only 10,000 training images"), or reject it.</p>
+<p><strong>Step 7: The Coding Agent works (inside the sandbox).</strong>
+- Sub-agent 1 (Code Writer) writes the code and installs what it needs.
+- Sub-agent 2 (Code Reviewer and Debugger) reviews the code before running it, then reads any error after running and fixes it.
+- The loop repeats (write → run → read the error → fix) up to a set limit. Before trying a new fix, it first checks the Lab Memory for a known fix.
+- Output: working code, the trained model and a <strong>metrics file</strong> written by the code itself.</p>
+<p><strong>Step 8: The Testing Agent works.</strong>
+- Sub-agent 1 (Test Designer) takes the Claims List from the Research Agent and writes test cases: small correctness tests (for example "the softened probabilities add up to 1") and claim tests (for example "the distilled model's test errors are within 10% of the paper's 74").
+- Sub-agent 2 (Test Runner) runs the tests in the sandbox and fills the <strong>Claim Scorecard</strong>: Match, Close, or Different for every claim.</p>
+<p><strong>Step 9: If results differ, the Gap Detective runs.</strong> It lists the differences between our setup and the paper's setup, runs quick small experiments to check which difference causes the gap, and writes a plain explanation.</p>
+<p><strong>Step 10: "What if" questions.</strong> The researcher (or the Team Manager on its own) asks "what if" questions. Each becomes a branch with its own small experiment. Weak branches are stopped early to save compute.</p>
+<p><strong>Step 11: Results page.</strong> The Live Agent Board changes into a Results page with one tab per agent: Research, Coding, Testing, plus Scorecard, What-Ifs, Team and Memory. Clicking an agent opens its full work in a new tab.</p>
+<p><strong>Step 12: Checkpoint 2 — push to GitHub.</strong> The researcher approves. The system scans for secrets (passwords, keys), then an n8n workflow pushes the complete project to the researcher's GitHub repository with meaningful commits. The repository link appears in the profile and on the dashboard.</p>
+<p><strong>Step 13: The system learns.</strong> All errors, fixes, settings, outcomes and agent scores are saved to the Lab Memory, and every agent's score is updated.</p>
+<h2 id="8-the-agents-who-does-what"><span class="sec">8</span><span>The agents: who does what</span></h2>
+<p><strong>An important point for the judges:</strong> the problem statement says the system should not depend only on fixed, predefined agents. Our three agents (Research, Coding, Testing) are the <strong>starting team</strong>, not the whole team. The Team Manager adds, improves, merges and removes agents based on the paper and on how each agent performs. This section explains each agent; Section 9 explains how the team changes.</p>
+<h3 id="81-team-manager-the-meta-controller">8.1 Team Manager (the meta-controller)</h3>
+<ul>
+<li><strong>What it is:</strong> The agent that leads the team. It does not write code or read the full paper itself. It plans, assigns work, watches progress and makes team decisions.</li>
+<li><strong>What it does:</strong>
+  1. Reads a short summary of the paper and the researcher's note.
+  2. Makes a <strong>skills list</strong> for this task.
+  3. Matches each skill to an existing agent, using the agent's skill tags and past score for that skill.
+  4. If no agent has a needed skill, it <strong>creates a new specialist agent</strong> from a template (see 8.6).
+  5. Decides the order of work and what can run in parallel.
+  6. After every task, updates each agent's score (Section 9).
+  7. Writes a one-line reason for every decision, shown on screen, for example: "Created 'Dataset Subset Planner' because the full dataset needs 3 hours on this laptop and no current agent handles data budgeting."</li>
+</ul>
+<h3 id="82-agent-1-research-agent-2-sub-agents">8.2 Agent 1: Research Agent (2 sub-agents)</h3>
+<p><strong>Sub-agent 1.1: Paper Reader (text extraction, OCR and insights)</strong>
+- Gets the paper's content in the most accurate way available, in this order:
+  1. <strong>arXiv LaTeX source</strong> (if the paper is on arXiv): arXiv provides the original source files of most papers. This gives the exact equations and table numbers with no OCR mistakes. Most tools do not use this.
+  2. <strong>Docling</strong> (free, open-source PDF reader that runs on CPU): turns the PDF into structured text, tables and sections.
+  3. <strong>OCR</strong> for scanned PDFs (Docling's built-in OCR), and <strong>Gemini Flash vision</strong> to read figures and charts.
+- Produces:
+  - a summary in simple words,
+  - the method, step by step,
+  - every setting (learning rate, batch size, number of layers, epochs) with its page number,
+  - the <strong>Claims List</strong>: every result number the paper reports, with page, table and the exact condition (for example "Table 1, page 3: distilled small model, 74 test errors on MNIST"),
+  - the <strong>Missing Details List</strong>: settings the paper does not state.</p>
+<p><strong>Sub-agent 1.2: Source Finder</strong>
+- If the user gave sources: studies the uploaded GitHub repository and dataset (structure, how to run, licence, size).
+- If not: searches for them using free services: GitHub search, Hugging Face (datasets, models and paper pages), Semantic Scholar, OpenAlex, arXiv and Kaggle datasets.
+- Checks each source: Is it official (by the authors)? Does the licence allow use? How big is it? Does it fit the compute budget?
+- Finds related newer papers that improve on this one, for the recommendation.</p>
+<p><strong>Output of the Research Agent:</strong> the <strong>Research Brief</strong>, which contains the summary, settings, Claims List, Missing Details List, sources found, and a recommendation (for example: "Use the official dataset loader from torchvision; the official code is not available; a 2019 follow-up paper reports a better method, which can be a 'what if' branch").</p>
+<h3 id="83-agent-2-coding-agent-2-sub-agents">8.3 Agent 2: Coding Agent (2 sub-agents)</h3>
+<p><strong>Sub-agent 2.1: Code Writer</strong>
+- Writes a clean project: data loading, model, training, evaluation, and a configuration file with every setting in one place.
+- Every script must write its results to a <code>metrics.json</code> file. This is how we guarantee that numbers come from real runs (Hero 2).
+- Writes a <code>requirements.txt</code> with exact versions so the run can be repeated.</p>
+<p><strong>Sub-agent 2.2: Code Reviewer and Debugger</strong>
+- <strong>Before running:</strong> reviews the code against the Research Brief (for example "the paper uses temperature 20, but the code uses 2").
+- <strong>After running:</strong> reads errors, finds the cause and fixes it. It first searches the Lab Memory for the same error; if a known fix exists, it applies that fix immediately.
+- Stops after a set number of failed tries (for example 5) and asks the researcher for help, with a clear description of the problem.</p>
+<p><strong>Languages:</strong> Python is the main language, because almost all ML research code is in Python. We also prepare a second sandbox image for <strong>R</strong> (common in statistics papers). We keep it to these two to stay reliable.</p>
+<p><strong>Output of the Coding Agent:</strong> working code, trained model files, logs and <code>metrics.json</code>. All of it is pushed to the researcher's GitHub after approval (Section 17).</p>
+<h3 id="84-agent-3-testing-agent-2-sub-agents">8.4 Agent 3: Testing Agent (2 sub-agents)</h3>
+<p><strong>Sub-agent 3.1: Test Designer</strong>
+- Connects to the Research Agent's output and reads the Claims List and settings.
+- Writes two kinds of tests (with <code>pytest</code>):
+  - <strong>Correctness tests:</strong> check that parts of the code do the right thing, for example "softmax with temperature sums to 1", "the model has the number of parameters the paper describes", "train and test data do not overlap".
+  - <strong>Claim tests:</strong> compare each result with the paper, with a tolerance, for example "distilled model test errors ≤ 74 × 1.10".</p>
+<p><strong>Sub-agent 3.2: Test Runner</strong>
+- Runs all tests inside the sandbox.
+- Fills the <strong>Claim Scorecard</strong>:
+  - <strong>Match:</strong> within the tolerance.
+  - <strong>Close:</strong> a small difference with a known reason (for example, fewer epochs).
+  - <strong>Different:</strong> a large difference; this starts the Gap Detective (Hero 3).</p>
+<p><strong>Output of the Testing Agent:</strong> test files, the test report and the Claim Scorecard.</p>
+<h3 id="85-observer-agent-the-map-drawer">8.5 Observer Agent (the map drawer)</h3>
+<ul>
+<li><strong>What it is:</strong> A watching agent. It does not do research work. It listens to every event from every agent.</li>
+<li><strong>What it does:</strong> Turns events into a live drawing in <strong>Excalidraw</strong> style (hand-drawn boxes and arrows): the paper in the middle, its claims around it, the sources found, the code files created, the tests, and arrows showing "this claim is tested by this test" or "this dataset feeds this script".</li>
+<li><strong>When the user sees it:</strong> live during the run, and especially at Checkpoint 1, after the Research Agent and before the Coding Agent, as requested.</li>
+<li><strong>Why it matters:</strong> The problem statement says the interface must make clear what the agents are doing and why. A drawing is much easier to understand than a long log.</li>
+</ul>
+<h3 id="86-specialist-agents-created-only-when-needed">8.6 Specialist agents (created only when needed)</h3>
+<p>The Team Manager creates these from templates when it finds a missing skill. Examples:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Specialist</th>
+<th>When it is created</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Environment Fixer</td>
+<td>Installation fails twice (version conflicts)</td>
+<td>Finds compatible library versions and fixes the environment</td>
+</tr>
+<tr>
+<td>Dataset Subset Planner</td>
+<td>The dataset is too big for the compute budget</td>
+<td>Picks a smaller, balanced subset and records this choice as an assumption</td>
+</tr>
+<tr>
+<td>Hyperparameter Scout</td>
+<td>The paper does not state an important setting</td>
+<td>Runs a few quick small trials to choose a good value</td>
+</tr>
+<tr>
+<td>Domain Specialist (for example "Graph Neural Networks for crystals")</td>
+<td>The paper is in a field none of the agents has handled</td>
+<td>Gets field-specific instructions and tools (for example <code>pymatgen</code> for materials papers)</td>
+</tr>
+<tr>
+<td>Gap Detective</td>
+<td>A claim is marked "Different"</td>
+<td>Tests the reasons for the difference (Hero 3)</td>
+</tr>
+</tbody>
+</table></div>
+<p>A specialist is not hard-coded as a separate program. It is a <strong>recipe</strong> (a small record) with: its name, its instructions, the tools it may use, which AI model it uses, and its skill tags. This is what makes creating, changing, merging and retiring agents easy and safe.</p>
+<h2 id="9-how-the-agent-team-evolves-the-reward-loop"><span class="sec">9</span><span>How the agent team evolves (the reward loop)</span></h2>
+<p>This section answers the problem statement's request that agents be "evaluated through a meaningful reward loop", and that strong agents are refined while weak ones are "merged, replaced, or retired".</p>
+<h3 id="91-the-agent-scorecard">9.1 The Agent Scorecard</h3>
+<p>After every task, each agent that worked on it gets a score from 0 to 1:</p>
+<pre><code>score = 0.5 × outcome  +  0.2 × researcher feedback  −  0.2 × cost  −  0.1 × wasted tries
+</code></pre>
+<ul>
+<li><strong>Outcome (50%):</strong> Did the work help? For example: the code ran, the tests passed, a claim matched, a bug was truly fixed, a source it found was actually used.</li>
+<li><strong>Researcher feedback (20%):</strong> thumbs up or down from the researcher on that agent's work (neutral if none given).</li>
+<li><strong>Cost (20%):</strong> AI tokens used plus sandbox time used, compared with the average for that kind of task.</li>
+<li><strong>Wasted tries (10%):</strong> failed attempts, repeated errors, or work that was thrown away.</li>
+</ul>
+<p>The score is saved per agent <strong>and per skill</strong>, so the system learns, for example, that one agent is good at "PyTorch training" but weak at "data cleaning".</p>
+<h3 id="92-the-life-of-an-agent">9.2 The life of an agent</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>Rule (simple version)</th>
+<th>What it means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Trial</strong></td>
+<td>Every new specialist starts here</td>
+<td>It gets small tasks first</td>
+</tr>
+<tr>
+<td><strong>Active</strong></td>
+<td>Average score ≥ 0.6 after 3 tasks</td>
+<td>It is trusted with normal tasks</td>
+</tr>
+<tr>
+<td><strong>Refined</strong></td>
+<td>Score drops below 0.4 on 3 tasks in a row</td>
+<td>The Team Manager rewrites its instructions using its own failure notes, then gives it another chance</td>
+</tr>
+<tr>
+<td><strong>Merged</strong></td>
+<td>Two agents do almost the same job (their skills and instructions overlap strongly)</td>
+<td>They are combined into one agent to reduce cost</td>
+</tr>
+<tr>
+<td><strong>Replaced</strong></td>
+<td>A newer agent does the same skill better and cheaper</td>
+<td>The new one takes over that skill</td>
+</tr>
+<tr>
+<td><strong>Retired</strong></td>
+<td>Still below 0.4 after being refined</td>
+<td>It is removed from the team; its recipe and history are kept in the archive</td>
+</tr>
+</tbody>
+</table></div>
+<p>Every change appears on the <strong>Team Evolution timeline</strong> with a reason, for example: "Retired 'Hyperparameter Scout v1': average score 0.31 over 4 tasks; it used 3 times more compute than 'Hyperparameter Scout v2' for similar results."</p>
+<h3 id="93-how-the-team-manager-gets-better-over-time">9.3 How the Team Manager gets better over time</h3>
+<ul>
+<li>It records which agent was chosen for which skill and the score that followed.</li>
+<li>For the next task, it prefers agents with a higher past score for the needed skill, but sometimes tries a newer agent, so it does not get stuck with the same choices. (This idea is similar to research on self-improving agents such as the Darwin Gödel Machine, which keeps an archive of agent versions instead of only the latest one.)</li>
+<li>The researcher can always override a choice ("use the other agent for this").</li>
+</ul>
+<h3 id="94-researcher-control">9.4 Researcher control</h3>
+<ul>
+<li>Every agent card has buttons: <strong>Pause, Stop, Retry, Give instruction, Thumbs up, Thumbs down.</strong></li>
+<li>The researcher can approve or reject the Team Manager's decisions, such as creating or retiring an agent.</li>
+</ul>
+<h2 id="10-must-build-features-required-by-the-problem-statement"><span class="sec">10</span><span>Must-build features (required by the problem statement)</span></h2>
+<p>These features are not optional. Each one comes from a line in the problem statement.</p>
+<ol>
+<li><strong>Login with GitHub, profile and GitHub connection</strong> — account details, connection status, choose or create a repository, revoke access.</li>
+<li><strong>Workspace with uploads</strong> — paper(s) required; dataset, repository and note optional; compute budget choice.</li>
+<li><strong>Team Manager with skills list and specialist creation</strong> — Section 8.1.</li>
+<li><strong>Research, Coding and Testing agents with sub-agents</strong> — Sections 8.2 to 8.4.</li>
+<li><strong>Safe sandbox execution</strong> — all code runs inside Docker with limits.</li>
+<li><strong>Automatic error repair</strong> — the write → run → fix loop.</li>
+<li><strong>Claim Scorecard</strong> — our numbers vs the paper's numbers, claim by claim.</li>
+<li><strong>Explanation of differences</strong> — the Gap Detective.</li>
+<li><strong>At least one "what if" extension</strong> — What-If Branches.</li>
+<li><strong>Agent Scorecard and Team Evolution</strong> — the reward loop.</li>
+<li><strong>Lab Memory</strong> — learning that carries to future runs.</li>
+<li><strong>Live Agent Board</strong> — what each agent is doing and why.</li>
+<li><strong>Approval checkpoints</strong> — approve the plan, approve long runs, approve the GitHub push.</li>
+<li><strong>Mobile control</strong> — the web app works on phones; plus a Telegram bot.</li>
+<li><strong>Push to GitHub through n8n</strong> — with secret scanning and meaningful commits.</li>
+<li><strong>Research notes in Markdown</strong> — a notes tab in every workspace; agents also write their notes here.</li>
+</ol>
+<h2 id="11-hero-features-our-wow-features"><span class="sec">11</span><span>Hero features (our "wow" features)</span></h2>
+<p>These are the features judges will remember. Each one solves a real problem from Section 3, and each one has a clear demo moment.</p>
+<h3 id="hero-1-claim-scorecard-with-paper-highlights">Hero 1: Claim Scorecard with paper highlights</h3>
+<ul>
+<li><strong>What it is:</strong> A table with one row per claim from the paper: the paper's number, our number, the difference and the status (Match, Close or Different).</li>
+<li><strong>What makes it special:</strong> Clicking a row opens the paper PDF at the <strong>exact page with the number highlighted</strong>, and next to it, the <strong>exact log line</strong> from our run that produced our number.</li>
+<li><strong>How it works:</strong> The Paper Reader saves the page number and position of each number it extracts. The PDF is shown with PDF.js (free) and the position is highlighted.</li>
+<li><strong>Demo moment:</strong> Click "Distilled model: 74 errors". The PDF jumps to the table on the correct page with "74" highlighted, and on the right our log shows <code>test_errors: 81</code>.</li>
+</ul>
+<h3 id="hero-2-no-number-without-proof">Hero 2: No number without proof</h3>
+<ul>
+<li><strong>What it is:</strong> A strict rule built into the system: <strong>the AI is never allowed to write a result number.</strong> Every result shown on screen, in the report or in the README comes only from <code>metrics.json</code> files written by code that actually ran in the sandbox.</li>
+<li><strong>Why it matters:</strong> Independent reviews found that existing AI research systems sometimes report numbers that no experiment produced. This rule removes that risk completely.</li>
+<li><strong>How it works:</strong>
+  1. When a run finishes, the Go backend reads <code>metrics.json</code> and saves each number with the run ID, code version (git commit) and a fingerprint (hash) of the log file.
+  2. Reports are built from templates that pull numbers from the database. The AI writes only the explanation text around them.
+  3. A final checker scans the AI-written text; if it contains any number that is not in the database for that run, the sentence is flagged and removed.</li>
+<li><strong>Demo moment:</strong> Hover over any number on screen: a small card shows "From run #7 · commit a1b2c3 · log line 214 · 10 Oct, 14:32".</li>
+</ul>
+<h3 id="hero-3-gap-detective--tests-the-reason-for-a-difference">Hero 3: Gap Detective — tests the reason for a difference</h3>
+<ul>
+<li><strong>What it is:</strong> When our result differs from the paper, most tools stop at "the result is different". The Gap Detective <strong>finds out why by testing it</strong>.</li>
+<li><strong>How it works, step by step:</strong>
+  1. It lists every difference between our setup and the paper's setup, using the Research Brief and the Missing Details List. Example: "we trained 5 epochs, the paper trained much longer", "we did not shift input images, the paper did", "we used a 20,000-image subset".
+  2. It ranks these by how likely they are to matter.
+  3. For the top 2 or 3 differences, it runs a quick small experiment that changes only that one thing.
+  4. It measures how much each change closes the gap.
+  5. It writes a plain explanation with the evidence.</li>
+<li><strong>Example output:</strong> "Our distilled model made 81 errors; the paper reports 74. Training longer reduced it to 77 (explains about 4 of the 7 errors). Adding the paper's image shifting reduced it to 75. The rest is likely normal variation between runs (3 runs with different seeds ranged from 74 to 78)."</li>
+<li><strong>Why it matters:</strong> The problem statement directly asks us to "explain where and why your results differ from the paper". We answer with evidence, not guesses.</li>
+</ul>
+<h3 id="hero-4-missing-details-log-every-assumption-is-visible">Hero 4: Missing Details Log (every assumption is visible)</h3>
+<ul>
+<li><strong>What it is:</strong> Papers often leave out details. Every setting in our code is labelled with where it came from:</li>
+<li><strong>Green — from the paper</strong> (with page number),</li>
+<li><strong>Blue — from the official code</strong> (with file and line),</li>
+<li><strong>Orange — our assumption</strong> (with the reason, for example "common default for this model type"),</li>
+<li><strong>Red — changed to fit compute</strong> (for example "dataset reduced to 20,000 images to fit the 15-minute budget").</li>
+<li><strong>Why it matters:</strong> This makes our reproduction honest and easy to check. It also tells the Gap Detective where to look first, because orange and red settings are the most likely causes of differences.</li>
+<li><strong>Demo moment:</strong> Open the configuration file view: each line has a coloured dot; hovering shows the source.</li>
+</ul>
+<h3 id="hero-5-what-if-branches-with-early-stopping">Hero 5: What-If Branches with early stopping</h3>
+<ul>
+<li><strong>What it is:</strong> The researcher asks a "what if" question in plain words (typed or spoken). The system turns it into several small experiments (branches) and runs them in parallel.</li>
+<li><strong>Example:</strong> "What if we use Fashion-MNIST instead of MNIST?" or "What if the temperature is 2, 5, 10 or 20?"</li>
+<li><strong>Smart use of compute:</strong> All branches start with a small budget. After the first short round, the weakest half is stopped and the rest continue (this method is called <strong>successive halving</strong>). This finds the best options using much less compute.</li>
+<li><strong>Branches are real git branches:</strong> each what-if branch is saved as its own branch in the researcher's GitHub repository, so nothing is lost.</li>
+<li><strong>The Team Manager can also suggest what-ifs on its own,</strong> based on the Gap Detective's findings and the Lab Memory, and asks the researcher for approval.</li>
+<li><strong>Demo moment:</strong> A tree view grows on screen: four branches start; two turn grey ("stopped early: clearly worse"); one turns green with the result.</li>
+</ul>
+<h3 id="hero-6-lab-memory--the-system-learns-from-every-run">Hero 6: Lab Memory — the system learns from every run</h3>
+<ul>
+<li><strong>What it is:</strong> A memory of everything learned, saved in the database with search by meaning:</li>
+<li><strong>Error memory:</strong> an error message and the fix that worked, for example "<code>numpy</code> 2.0 breaks this old code → pin <code>numpy&lt;2</code>".</li>
+<li><strong>Settings memory:</strong> settings that worked for a kind of model and a compute budget.</li>
+<li><strong>Agent memory:</strong> which agent is good at which skill.</li>
+<li><strong>Experiment memory:</strong> every run, its settings and results.</li>
+<li><strong>How it is used:</strong> Before fixing an error, the Debugger searches the memory. Before planning, the Team Manager checks what worked before for similar papers.</li>
+<li><strong>Demo moment (proof of learning):</strong> We show the first run's timeline (for example 6 fix attempts, 9 minutes) next to a second run on a related paper (1 fix attempt, applied from memory in under a second, 4 minutes). A badge shows "Fixed from memory — learned in run #3".</li>
+</ul>
+<h3 id="hero-7-live-research-map-excalidraw">Hero 7: Live Research Map (Excalidraw)</h3>
+<ul>
+<li><strong>What it is:</strong> The Observer Agent draws a live, hand-drawn style map of the research, as requested by our team.</li>
+<li><strong>What it shows:</strong> the paper, its claims, the sources, the code files, the tests and the results, with arrows showing how they connect. Nodes change colour as work progresses (grey = waiting, blue = working, green = done, red = problem).</li>
+<li><strong>How it works:</strong> Every agent sends events (for example "found dataset", "created file train.py", "test passed"). The Observer turns them into Excalidraw elements using the free Excalidraw library's built-in function for creating elements from simple data.</li>
+<li><strong>Extra:</strong> The researcher can draw on the map too (add notes, circle something), and can export it as an image for the PPT or report.</li>
+</ul>
+<h3 id="hero-8-compute-budget-planner">Hero 8: Compute Budget Planner</h3>
+<ul>
+<li><strong>What it is:</strong> Before running, the system estimates how long the experiment will take <strong>on this exact computer</strong>, and chooses model size, dataset subset and number of epochs to fit the chosen budget.</li>
+<li><strong>How it works:</strong> It runs a 20-second "test drive" (a few training steps), measures the speed, and calculates the time for the full run. If it does not fit, it proposes options: "Use 30% of the data (about 6 minutes)" or "Send to Kaggle GPU (about 2 minutes, uses free GPU quota)".</li>
+<li><strong>Why it matters:</strong> The problem statement asks us to choose "model sizes, dataset subsets, and experiment budgets that still produce meaningful evidence" on modest compute. This does it automatically and shows the reasoning.</li>
+</ul>
+<h3 id="hero-9-voice-control-from-a-phone-and-an-audio-briefing">Hero 9: Voice control from a phone, and an audio briefing</h3>
+<ul>
+<li><strong>Talk to your lab from your phone:</strong> The researcher sends a voice note to our <strong>Telegram bot</strong> (free) or speaks in the mobile web app, for example: "How is the run going?" or "Try temperature 5 as a new branch."
+  1. <strong>Groq Whisper</strong> turns speech into text (very fast and free within limits).
+  2. The Team Manager understands the request.
+  3. For anything that changes the work, it asks for a one-tap confirmation: <strong>[Yes] [No]</strong>.</li>
+<li><strong>Notifications:</strong> The bot sends messages such as "Run finished: 3 of 4 claims matched. Approve push to GitHub? [Yes] [No]".</li>
+<li><strong>Audio briefing:</strong> At the end of a run, the system creates a short spoken summary (about 90 seconds) of what happened: what was reproduced, what differed and why, and what to try next. The researcher can listen on the way home. The script is written by the AI from the database (numbers inserted from real results, Hero 2), and the voice is made by <strong>Kokoro</strong>, a free open-source text-to-speech model that runs on a normal CPU.</li>
+<li><strong>Why it matters:</strong> The problem statement asks for remote control "including through a mobile interface, while longer-running computation continues elsewhere".</li>
+</ul>
+<h3 id="hero-10-paper-vs-paper-fair-comparison">Hero 10: Paper vs Paper (fair comparison)</h3>
+<ul>
+<li><strong>What it is:</strong> The researcher uploads two papers that make competing claims, and the system tests both <strong>under the same conditions</strong> (same data, same compute budget, same evaluation).</li>
+<li><strong>Ready-made demo pair from the problem statement's list:</strong></li>
+<li><strong>TabPFN</strong> (2023) says a pretrained transformer can solve small tabular classification problems very fast and very well.</li>
+<li><strong>Grinsztajn et al.</strong> (2022) says tree-based models (like XGBoost) still beat deep learning on tabular data.</li>
+<li>Our system runs TabPFN, XGBoost and a simple neural network on the same small datasets, on CPU, and shows who wins, where, and why (for example: "TabPFN wins on datasets under 1,000 rows; XGBoost wins on the larger dataset").</li>
+<li><strong>Why it matters:</strong> The problem statement asks for "comparing multiple papers or approaches under meaningful conditions".</li>
+</ul>
+<h3 id="hero-11-live-lab-stream-and-run-replay">Hero 11: Live Lab Stream and Run Replay</h3>
+<ul>
+<li><strong>Live Lab Stream:</strong> Any workspace can be shared as a read-only live link with a QR code. Teammates, a professor or the judges scan the QR code and watch the agents, the map and the scorecard update live on their own phones.</li>
+<li><strong>Run Replay:</strong> Because every event is saved with a time, any finished run can be <strong>played back like a video</strong>, with play, pause, speed (1×, 4×, 16×) and a timeline slider. This lets a professor or teammate see exactly how the result was reached, step by step.</li>
+<li><strong>Demo moment:</strong> During the pitch, we show the QR code on the slide. Judges scan it and see our live run on their phones while we present.</li>
+</ul>
+<h2 id="12-extra-features-if-time-allows"><span class="sec">12</span><span>Extra features (if time allows)</span></h2>
+<ol>
+<li><strong>Open in Colab button:</strong> Every pushed repository includes a notebook with a one-click "Open in Colab" link, so anyone can re-run it on free Colab.</li>
+<li><strong>Kaggle run:</strong> For bigger runs, the system pushes the code to Kaggle as a private notebook using the free Kaggle API, starts it on a free GPU, and pulls the results back.</li>
+<li><strong>Reproducibility badge:</strong> The pushed README shows a badge such as "3 of 4 claims reproduced on CPU in 11 minutes".</li>
+<li><strong>Cost meter:</strong> Shows tokens, sandbox minutes and money spent for every agent and every run (₹0 in our case).</li>
+<li><strong>Comments and teammates:</strong> Teammates can be invited to a workspace and leave comments on any claim, result or map node.</li>
+<li><strong>Report export:</strong> One-click export of the full report as Markdown and PDF.</li>
+<li><strong>Hypothesis board:</strong> A board of open questions and ideas ("Does this method work on noisy labels?"), linked to the what-if branches that tested them.</li>
+<li><strong>Email to the authors:</strong> For a "Different" claim, the system drafts a polite email to the paper's authors asking about the missing detail. The researcher reviews and sends it themselves.</li>
+<li><strong>Run video export:</strong> Record the Run Replay as a short video file in the browser, for sharing.</li>
+</ol>
+<h2 id="13-which-paper-we-demo-and-why"><span class="sec">13</span><span>Which paper we demo, and why</span></h2>
+<h3 id="131-main-demo-paper-distilling-the-knowledge-in-a-neural-network-hinton-vinyals--dean-2015">13.1 Main demo paper: "Distilling the Knowledge in a Neural Network" (Hinton, Vinyals &amp; Dean, 2015)</h3>
+<p><strong>Why this paper:</strong>
+- It is on the problem statement's own list (Edge and efficient ML).
+- It runs on a laptop CPU in minutes (MNIST, small fully connected networks).
+- Its main claim is simple and clear for any judge: a small model trained to copy a big model's "soft" answers performs almost as well as the big model, and much better than the same small model trained alone.
+- It has a natural, honest gap (the paper trained for a long time with extra tricks), which lets us show the Gap Detective.</p>
+<p><strong>Claims we will check (MNIST, from the paper; confirm each number against the paper before the pitch):</strong></p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Model</th>
+<th>What the paper reports</th>
+<th>What it means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Big model (2 hidden layers of 1,200 units, with dropout)</td>
+<td>67 test errors</td>
+<td>The teacher</td>
+</tr>
+<tr>
+<td>Small model trained alone (2 hidden layers of 800 units)</td>
+<td>146 test errors</td>
+<td>The baseline</td>
+</tr>
+<tr>
+<td>Small model trained with distillation (temperature 20)</td>
+<td>74 test errors</td>
+<td>The key result: almost as good as the teacher</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Our "what if" extensions:</strong>
+1. <strong>What if the temperature changes?</strong> (2, 5, 10, 20) — which value works best on our smaller budget?
+2. <strong>What if we use Fashion-MNIST instead of MNIST?</strong> — does the distillation benefit still hold on a harder dataset?
+3. <strong>What if the small model is much smaller?</strong> (for example 100 units) — how small can it get before the benefit disappears?</p>
+<p><strong>Expected time on a laptop CPU:</strong> about 3 to 8 minutes per full run with a reduced number of epochs (we will measure this exactly on our laptop before the demo).</p>
+<h3 id="132-comparison-demo-tabpfn-vs-why-do-tree-based-models-still-outperform-deep-learning-on-tabular-data">13.2 Comparison demo: TabPFN vs "Why do tree-based models still outperform deep learning on tabular data?"</h3>
+<p>Used for Hero 10 (Paper vs Paper). Both run on CPU in seconds to minutes on small datasets. <strong>Before the demo, check that the TabPFN model download works on our machine</strong>, because newer versions may need a Hugging Face login.</p>
+<h3 id="133-backup-papers-if-something-breaks">13.3 Backup papers (if something breaks)</h3>
+<ul>
+<li><strong>Physics-informed neural networks</strong> (Raissi et al.) — solving a simple equation (for example Burgers' equation) on CPU.</li>
+<li><strong>KAN</strong> (Liu et al., 2024) — the official <code>pykan</code> library has small examples that run on CPU.</li>
+<li><strong>Lottery Ticket Hypothesis</strong> (Frankle &amp; Carbin) — the small MNIST network version.</li>
+</ul>
+<p>We should <strong>pre-run</strong> the main and backup papers once before the demo, so the Lab Memory already has some learning, and so we have a recorded run to show if the internet fails.</p>
+<h2 id="14-langgraph-or-langchain-our-choice"><span class="sec">14</span><span>LangGraph or LangChain: our choice</span></h2>
+<p><strong>Our choice: LangGraph</strong> (free and open-source, in Python).</p>
+<p><strong>Simple explanation of the difference:</strong>
+- <strong>LangChain</strong> is a toolbox of building blocks for one AI step: connect to a model, write a prompt, call a tool. It is good for simple chains of steps.
+- <strong>LangGraph</strong> is built on top of LangChain for <strong>many agents working together in steps that can loop</strong>. We draw our system as a graph: each agent is a box, and arrows show who works next.</p>
+<p><strong>Why LangGraph fits our project exactly:</strong></p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>What we need</th>
+<th>How LangGraph provides it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Loops (write code → run → error → fix → run again)</td>
+<td>Graphs can have cycles; LangChain chains are mostly one-way</td>
+</tr>
+<tr>
+<td>Approval checkpoints (approve plan, approve push)</td>
+<td>Built-in "interrupt": the graph pauses and waits for the researcher, then continues</td>
+</tr>
+<tr>
+<td>Save progress so a crash or restart does not lose work</td>
+<td>Built-in checkpoints saved to Postgres</td>
+</tr>
+<tr>
+<td>Creating specialist agents while running</td>
+<td>The <code>Send</code> feature starts any number of workers at run time; each worker loads an agent recipe from the database</td>
+</tr>
+<tr>
+<td>Several what-if branches in parallel</td>
+<td>Parallel branches, then results are combined</td>
+</tr>
+<tr>
+<td>Live updates to the screen</td>
+<td>Streaming of every step as an event</td>
+</tr>
+</tbody>
+</table></div>
+<p>We still use small parts of LangChain inside LangGraph (for example, the connectors to Groq and Gemini). We do not add other agent frameworks; one framework is simpler and easier to explain.</p>
+<h2 id="15-ai-plan-groq-and-gemini-both-free"><span class="sec">15</span><span>AI plan: Groq and Gemini (both free)</span></h2>
+<p>We use two free AI providers. Each job uses the model that fits it best. If one provider hits its limit, the request automatically moves to the other.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Job</th>
+<th>Model (free)</th>
+<th>Why this model</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Team Manager planning, Code Writer, Debugger</td>
+<td><strong>Groq: GPT-OSS 120B</strong></td>
+<td>Strong at reasoning and code; Groq is very fast, so the live board feels quick</td>
+</tr>
+<tr>
+<td>Code Reviewer (second opinion)</td>
+<td><strong>Groq: Qwen3 32B</strong></td>
+<td>A different model catches different mistakes</td>
+</tr>
+<tr>
+<td>Writing summaries, explanations, briefing scripts</td>
+<td><strong>Groq: Llama 3.3 70B</strong></td>
+<td>Good, clear writing</td>
+</tr>
+<tr>
+<td>Quick small decisions (classify an error, read a Telegram command)</td>
+<td><strong>Groq: Llama 3.1 8B Instant</strong></td>
+<td>Highest free daily limit; very fast</td>
+</tr>
+<tr>
+<td>Reading the full paper with figures and charts</td>
+<td><strong>Gemini Flash</strong></td>
+<td>Very long input (whole paper at once) and can read images</td>
+</tr>
+<tr>
+<td>Speech to text (voice notes)</td>
+<td><strong>Groq: Whisper Large v3 (Turbo)</strong></td>
+<td>Free, fast, accurate, many languages</td>
+</tr>
+<tr>
+<td>Text to speech (audio briefing)</td>
+<td><strong>Kokoro</strong> (runs on our CPU)</td>
+<td>Free, open-source, no limits; browser voice as backup</td>
+</tr>
+<tr>
+<td>Memory search (meaning-based)</td>
+<td><strong>FastEmbed with a small BGE model</strong> (runs on our CPU)</td>
+<td>Free, no limits, no internet needed</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Note:</strong> model names on Groq and Gemini change often. On the day, check the exact names and limits in the Groq console and Google AI Studio.</p>
+<p><strong>How we stay inside the free limits:</strong>
+1. <strong>Cache:</strong> the paper is read once; the result is saved and reused by all agents.
+2. <strong>Small model first:</strong> easy tasks use the small fast model; only hard tasks use the big model.
+3. <strong>Short context:</strong> agents get only the part of the Research Brief they need, not the whole paper.
+4. <strong>Rate limiter:</strong> the Go backend keeps a counter per model and waits or switches provider before hitting a limit.
+5. <strong>Fallback chain:</strong> Groq → Gemini → (optional) a free model on OpenRouter.
+6. <strong>Two free accounts:</strong> one per team member for testing, so the demo account's daily quota stays full. (Limits are per organisation, so extra keys in the same account do not help.)</p>
+<h2 id="16-sandbox-and-compute-plan"><span class="sec">16</span><span>Sandbox and compute plan</span></h2>
+<h3 id="161-where-code-runs">16.1 Where code runs</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Cost</th>
+<th>When we use it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Local Docker sandbox</strong> (on our laptop)</td>
+<td>Free</td>
+<td>Default for everything; this matches the problem statement's "laptop CPU"</td>
+</tr>
+<tr>
+<td><strong>Kaggle</strong> (free GPU through the Kaggle API)</td>
+<td>Free</td>
+<td>When the Compute Budget Planner says the run is too slow for the laptop</td>
+</tr>
+<tr>
+<td><strong>Google Colab</strong></td>
+<td>Free</td>
+<td>Through the "Open in Colab" button on the pushed notebook (Colab has no official API to start runs automatically)</td>
+</tr>
+<tr>
+<td><strong>E2B cloud sandbox</strong></td>
+<td>Free one-time credit for new accounts</td>
+<td>Optional backup if the laptop's Docker fails during the event</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="162-safety-rules-inside-the-sandbox">16.2 Safety rules inside the sandbox</h3>
+<ul>
+<li>Each run gets a fresh Docker container, deleted after the run.</li>
+<li><strong>Limits:</strong> for example 4 CPU cores, 6 GB memory, 256 processes, and a time limit (based on the chosen budget).</li>
+<li><strong>Internet:</strong> on only during the install step (to download libraries and datasets), off during training and testing.</li>
+<li>Code runs as a normal user, not as administrator.</li>
+<li>Only the workspace folder is shared with the container.</li>
+<li>The paper and uploaded files are read-only inside the container.</li>
+</ul>
+<h3 id="163-ready-made-images-to-save-time">16.3 Ready-made images to save time</h3>
+<p>We prepare Docker images in advance with common libraries already installed: Python 3.11, PyTorch (CPU), scikit-learn, NumPy, pandas, XGBoost, matplotlib, pytest. This saves several minutes per run, which matters a lot during a live demo. The second image has R with common statistics packages.</p>
+<h2 id="17-github-integration-and-the-n8n-push"><span class="sec">17</span><span>GitHub integration and the n8n push</span></h2>
+<h3 id="171-login-profile-and-connection">17.1 Login, profile and connection</h3>
+<ul>
+<li><strong>Login with GitHub (OAuth).</strong> We ask for permission to read the profile and email, and to create and write to repositories.</li>
+<li>The <strong>Profile page</strong> shows: name, email, GitHub username and photo, connection status (Connected / Not connected), the selected repository, and buttons: <strong>Choose repository, Create new repository, Disconnect</strong>.</li>
+<li><strong>Disconnect</strong> removes the token from our database and also cancels our access on GitHub's side through the GitHub API.</li>
+<li><strong>Security:</strong> the GitHub token is encrypted (AES-256-GCM) before it is saved in the database. It is never sent to the browser and never written to logs.</li>
+</ul>
+<h3 id="172-the-push-flow-step-by-step">17.2 The push flow, step by step</h3>
+<ol>
+<li>All code generation, review, execution and testing finish inside the sandbox.</li>
+<li>The researcher clicks <strong>Approve push</strong> (or taps Yes on Telegram).</li>
+<li><strong>If GitHub is not connected</strong>, the system asks the researcher to connect it first and stops here.</li>
+<li>The Go backend collects the project into a bundle and runs a <strong>secret scan with Gitleaks</strong> (a free, open-source tool written in Go). If a password or API key is found, the push is blocked and the file and line are shown.</li>
+<li>Large files are handled: datasets are not pushed (a download script is pushed instead); model files over 50 MB go to a free Hugging Face model repository, with a link in the README.</li>
+<li>The Go backend calls the <strong>n8n workflow</strong> (n8n runs on our machine in Docker, free).</li>
+<li>The n8n workflow:
+   - receives the bundle details through a webhook,
+   - creates one <strong>meaningful commit per stage</strong> using GitHub's API: "Add research brief and claims", "Add implementation", "Add tests and results", "Add what-if: temperature sweep" (each what-if on its own branch),
+   - sends the commit links back to the Go backend,
+   - sends a Telegram message to the researcher with the repository link.</li>
+<li>The repository URL appears on the <strong>Profile page</strong> and the <strong>workspace dashboard</strong>.</li>
+</ol>
+<p><strong>Security note for n8n:</strong> n8n runs only inside our private Docker network (not open to the internet), and the push workflow is set to <strong>not save execution data</strong>, so the token is not stored inside n8n.</p>
+<p><strong>Backup:</strong> if n8n fails during the demo, the Go backend can push directly using the GitHub API (the <code>go-github</code> library), with the same steps.</p>
+<h3 id="173-what-the-pushed-repository-contains">17.3 What the pushed repository contains</h3>
+<pre><code>README.md            ← summary, Claim Scorecard, badge, &quot;Open in Colab&quot; button
+paper/
+  claims.json        ← every claim with page and table
+research/
+  brief.md           ← Research Brief from the Research Agent
+  research-map.png   ← the Excalidraw map
+src/                 ← the implementation
+configs/
+  config.yaml        ← every setting, labelled with its source (paper / code / assumption)
+tests/               ← correctness tests and claim tests
+results/
+  metrics.json       ← numbers written by the code during the run
+  scorecard.md       ← paper vs our results
+  gap-analysis.md    ← Gap Detective findings
+logs/                ← full run logs
+notebook.ipynb       ← one-click re-run on Colab
+requirements.txt     ← exact library versions
+Dockerfile           ← the exact environment
+</code></pre>
+<h2 id="18-final-tech-stack"><span class="sec">18</span><span>Final tech stack</span></h2>
+<p>Everything below is free.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Technology</th>
+<th>What it is used for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Frontend</td>
+<td><strong>Next.js</strong> (App Router) + <strong>Tailwind CSS</strong> + <strong>shadcn/ui</strong></td>
+<td>All screens; works on phone and laptop</td>
+</tr>
+<tr>
+<td>Research map</td>
+<td><strong>Excalidraw</strong> (open-source library)</td>
+<td>Hand-drawn style live map</td>
+</tr>
+<tr>
+<td>Agent flow view</td>
+<td><strong>React Flow</strong></td>
+<td>Live graph of agents and their connections</td>
+</tr>
+<tr>
+<td>Charts</td>
+<td><strong>Recharts</strong></td>
+<td>Training curves, scorecards, agent scores</td>
+</tr>
+<tr>
+<td>PDF viewer</td>
+<td><strong>PDF.js</strong> (through <code>react-pdf</code>)</td>
+<td>Showing the paper with highlighted claims</td>
+</tr>
+<tr>
+<td>Backend API</td>
+<td><strong>Go</strong> (standard <code>net/http</code> router, or the <code>chi</code> router)</td>
+<td>Login, workspaces, uploads, live streaming, sandbox control, GitHub, Telegram, rate limiting</td>
+</tr>
+<tr>
+<td>Agent system</td>
+<td><strong>Python</strong> + <strong>LangGraph</strong></td>
+<td>Team Manager and all agents</td>
+</tr>
+<tr>
+<td>Paper reading</td>
+<td><strong>Docling</strong>, arXiv source files, Gemini Flash</td>
+<td>Text, tables, equations, figures</td>
+</tr>
+<tr>
+<td>AI models</td>
+<td><strong>Groq</strong> and <strong>Gemini</strong> (free tiers)</td>
+<td>Thinking, coding, writing, speech to text</td>
+</tr>
+<tr>
+<td>Text to speech</td>
+<td><strong>Kokoro</strong></td>
+<td>Audio briefing</td>
+</tr>
+<tr>
+<td>Database</td>
+<td><strong>PostgreSQL</strong> + <strong>pgvector</strong></td>
+<td>All data plus meaning-based memory search</td>
+</tr>
+<tr>
+<td>Queue and live events</td>
+<td><strong>Redis</strong></td>
+<td>Job queue and live event channel between Go and Python</td>
+</tr>
+<tr>
+<td>Sandbox</td>
+<td><strong>Docker</strong> (controlled from Go with the Docker SDK)</td>
+<td>Safe code execution</td>
+</tr>
+<tr>
+<td>Remote compute</td>
+<td><strong>Kaggle API</strong></td>
+<td>Free GPU runs</td>
+</tr>
+<tr>
+<td>Automation</td>
+<td><strong>n8n</strong> (self-hosted, free)</td>
+<td>GitHub push workflow</td>
+</tr>
+<tr>
+<td>Secret scanning</td>
+<td><strong>Gitleaks</strong></td>
+<td>Block passwords and keys before push</td>
+</tr>
+<tr>
+<td>Mobile control</td>
+<td>Mobile web app (installable) + <strong>Telegram Bot API</strong></td>
+<td>Notifications, approvals, voice commands</td>
+</tr>
+<tr>
+<td>Public link</td>
+<td><strong>Cloudflare Tunnel</strong> (free)</td>
+<td>A public HTTPS link to our laptop for judges' phones</td>
+</tr>
+<tr>
+<td>Frontend hosting</td>
+<td><strong>Vercel</strong> (free) or run locally</td>
+<td>Hosting the Next.js app</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Why the backend runs on our laptop and not on a free cloud server:</strong> the sandbox needs Docker and real CPU power. Free cloud servers do not allow running Docker containers inside them and have very little CPU. Our laptop is also exactly the "modest compute" the problem statement asks for. Cloudflare Tunnel gives it a public link for free.</p>
+<h2 id="19-system-architecture"><span class="sec">19</span><span>System architecture</span></h2>
+<pre><code>                         ┌──────────────────────────────────────┐
+  Researcher (laptop) ──▶│  Next.js + Tailwind (web app)         │◀── Researcher (phone)
+  Judges (phone, QR) ───▶│  Live board · Map · Scorecard · Tabs  │
+                         └───────────────┬──────────────────────┘
+                                         │ HTTPS + live stream (SSE)
+                                         ▼
+ Telegram ◀──────────────▶ ┌──────────────────────────────────────┐
+ (voice, approvals)        │  Go backend                           │
+                           │  • login (GitHub OAuth) • uploads     │
+                           │  • live event stream  • rate limiter  │
+                           │  • sandbox control    • secret scan   │
+                           └───┬──────────┬───────────┬──────┬────┘
+                               │          │           │      │
+                 jobs + events │          │ SQL       │      │ webhook
+                               ▼          ▼           │      ▼
+                         ┌─────────┐ ┌────────────┐   │  ┌─────────┐    ┌────────┐
+                         │  Redis  │ │ PostgreSQL │   │  │   n8n   │──▶ │ GitHub │
+                         └────┬────┘ │ + pgvector │   │  └─────────┘    └────────┘
+                              │      └────────────┘   │
+                              ▼                       │ start / stop containers
+                ┌──────────────────────────────┐      ▼
+                │ Python agent worker          │  ┌──────────────────────────┐
+                │ (LangGraph)                  │  │ Docker sandbox            │
+                │ Team Manager                 │─▶│ (one fresh container      │
+                │ Research · Coding · Testing  │  │  per run, with limits)    │
+                │ Observer · Specialists       │  └──────────────────────────┘
+                └──────────────┬───────────────┘            │ (optional)
+                               │                             ▼
+                               ▼                        Kaggle (free GPU)
+                    Groq · Gemini (free AI)
+                    arXiv · Semantic Scholar · OpenAlex · Hugging Face · GitHub search
+</code></pre>
+<p><strong>How a request flows, in simple words:</strong>
+1. The researcher uploads a paper in the web app. The Go backend saves the file and creates a new run.
+2. Go puts a "start run" job into Redis.
+3. The Python worker picks up the job and starts the LangGraph graph (Team Manager first).
+4. When an agent needs to run code, it asks the Go backend, which starts a sandbox container, runs the code and returns the output. Go controls the sandbox so that all safety rules are in one place.
+5. Every agent step sends a small event (for example "Coding Agent: installing PyTorch") to Redis.
+6. Go saves every event in PostgreSQL (for Run Replay) and streams it live to every open screen (researcher, teammates, judges).
+7. At a checkpoint, the graph pauses. The researcher approves on the web or on Telegram, and Go tells the worker to continue.</p>
+<h2 id="20-live-events-how-the-screen-stays-updated"><span class="sec">20</span><span>Live events: how the screen stays updated</span></h2>
+<p>Every action by every agent creates one event. All live features (Live Agent Board, Research Map, Telegram messages, Run Replay) are built from the same events.</p>
+<pre><code class="language-json">{
+  &quot;run_id&quot;: &quot;r_42&quot;,
+  &quot;time&quot;: &quot;2026-10-10T14:32:05Z&quot;,
+  &quot;agent&quot;: &quot;coding.debugger&quot;,
+  &quot;type&quot;: &quot;fix_applied&quot;,
+  &quot;message&quot;: &quot;Fixed import error: pinned numpy&lt;2 (known fix from memory)&quot;,
+  &quot;why&quot;: &quot;Same error seen in run #3; that fix worked&quot;,
+  &quot;links&quot;: { &quot;memory_item&quot;: &quot;m_17&quot;, &quot;file&quot;: &quot;src/train.py&quot; },
+  &quot;cost&quot;: { &quot;tokens&quot;: 812, &quot;sandbox_seconds&quot;: 0 }
+}
+</code></pre>
+<ul>
+<li><strong>Live streaming:</strong> Server-Sent Events (SSE), a simple one-way live connection from server to browser. It is simpler than WebSockets and enough for our needs (actions from the user go through normal API calls).</li>
+<li><strong>The "why" field</strong> is shown on every card. This is how we meet the problem statement's request to show "why they are doing it".</li>
+</ul>
+<h2 id="21-folder-structure"><span class="sec">21</span><span>Folder structure</span></h2>
+<pre><code>/
+├── apps/
+│   └── web/                     ← Next.js + Tailwind frontend
+│       ├── app/
+│       │   ├── (auth)/login/
+│       │   ├── profile/
+│       │   ├── workspaces/new/
+│       │   ├── workspaces/[id]/live/         ← Live Agent Board
+│       │   ├── workspaces/[id]/map/          ← Research Map
+│       │   ├── workspaces/[id]/results/      ← tabs: research, coding, testing,
+│       │   │                                    scorecard, what-ifs, team, memory, notes
+│       │   └── share/[token]/                ← read-only live view for judges
+│       └── components/
+├── services/
+│   ├── api/                     ← Go backend
+│   │   ├── cmd/server/main.go
+│   │   └── internal/
+│   │       ├── auth/            ← GitHub OAuth, sessions, token encryption
+│   │       ├── workspace/       ← workspaces, uploads, notes
+│   │       ├── runs/            ← runs, checkpoints, events, SSE
+│   │       ├── sandbox/         ← Docker control, limits
+│   │       ├── githubpush/      ← bundle, Gitleaks, n8n call, direct-push backup
+│   │       ├── telegram/        ← bot, voice notes, approvals
+│   │       ├── ratelimit/       ← AI usage counters
+│   │       └── store/           ← PostgreSQL queries
+│   └── agents/                  ← Python + LangGraph
+│       ├── graph.py             ← the main graph
+│       ├── manager/             ← Team Manager, skills list, scoring, evolution
+│       ├── research/            ← paper_reader.py, source_finder.py
+│       ├── coding/              ← writer.py, reviewer.py
+│       ├── testing/             ← test_designer.py, test_runner.py
+│       ├── observer/            ← events → Excalidraw elements
+│       ├── specialists/         ← agent recipe templates
+│       ├── memory/              ← embeddings, search
+│       └── llm/                 ← Groq / Gemini router and fallback
+├── sandbox-images/
+│   ├── python/Dockerfile
+│   └── r/Dockerfile
+├── n8n/
+│   └── github-push.json         ← exported n8n workflow
+├── docker-compose.yml           ← Postgres, Redis, n8n, API, agents
+└── allaboutourproject.md        ← this document
+</code></pre>
+<h2 id="22-database-design"><span class="sec">22</span><span>Database design</span></h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Table</th>
+<th>What it stores (main fields)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>users</code></td>
+<td>id, name, email, github_username, avatar_url, created_at</td>
+</tr>
+<tr>
+<td><code>github_connections</code></td>
+<td>user_id, encrypted_token, scopes, default_repo, status, connected_at</td>
+</tr>
+<tr>
+<td><code>workspaces</code></td>
+<td>id, owner_id, title, compute_budget, note, created_at</td>
+</tr>
+<tr>
+<td><code>workspace_members</code></td>
+<td>workspace_id, user_id, role (owner / editor / viewer)</td>
+</tr>
+<tr>
+<td><code>uploads</code></td>
+<td>id, workspace_id, kind (paper / dataset / repo_link / note), path_or_url</td>
+</tr>
+<tr>
+<td><code>papers</code></td>
+<td>id, workspace_id, title, arxiv_id, parsed_markdown_path, summary</td>
+</tr>
+<tr>
+<td><code>claims</code></td>
+<td>id, paper_id, description, value, unit, page, table_ref, position_on_page, condition</td>
+</tr>
+<tr>
+<td><code>settings</code></td>
+<td>id, run_id, name, value, source (paper / official_code / assumption / compute_change), source_ref, reason</td>
+</tr>
+<tr>
+<td><code>runs</code></td>
+<td>id, workspace_id, parent_run_id, branch_name, status, started_at, finished_at, git_commit</td>
+</tr>
+<tr>
+<td><code>run_events</code></td>
+<td>id, run_id, time, agent, type, message, why, links (JSON), cost (JSON)</td>
+</tr>
+<tr>
+<td><code>metrics</code></td>
+<td>id, run_id, name, value, log_file_hash, log_line</td>
+</tr>
+<tr>
+<td><code>scorecard_entries</code></td>
+<td>id, run_id, claim_id, metric_id, difference, status (match / close / different), explanation</td>
+</tr>
+<tr>
+<td><code>whatif_branches</code></td>
+<td>id, run_id, question, settings_change (JSON), status (running / stopped_early / done), result_metric_id</td>
+</tr>
+<tr>
+<td><code>agents</code></td>
+<td>id, name, kind (core / specialist), stage (trial / active / refined / merged / replaced / retired), current_version_id</td>
+</tr>
+<tr>
+<td><code>agent_versions</code></td>
+<td>id, agent_id, instructions, tools (JSON), model, skill_tags, created_reason</td>
+</tr>
+<tr>
+<td><code>agent_tasks</code></td>
+<td>id, run_id, agent_id, skill, outcome, feedback, tokens, sandbox_seconds, wasted_tries, score</td>
+</tr>
+<tr>
+<td><code>team_decisions</code></td>
+<td>id, run_id, decision (create / refine / merge / replace / retire / assign), agent_ids, reason</td>
+</tr>
+<tr>
+<td><code>memory_items</code></td>
+<td>id, kind (error_fix / setting / experiment / agent_skill), text, details (JSON), embedding (vector), times_used, success_rate</td>
+</tr>
+<tr>
+<td><code>notes</code></td>
+<td>id, workspace_id, author (user or agent), markdown, updated_at</td>
+</tr>
+<tr>
+<td><code>comments</code></td>
+<td>id, workspace_id, target_type, target_id, user_id, text</td>
+</tr>
+<tr>
+<td><code>pushes</code></td>
+<td>id, run_id, repo_url, commit_urls (JSON), status, secret_scan_result</td>
+</tr>
+<tr>
+<td><code>share_links</code></td>
+<td>token, workspace_id, expires_at</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="23-api-design-go-backend"><span class="sec">23</span><span>API design (Go backend)</span></h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Method and path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET /auth/github/login</code> · <code>GET /auth/github/callback</code></td>
+<td>Log in with GitHub</td>
+</tr>
+<tr>
+<td><code>GET /me</code></td>
+<td>Profile and GitHub connection status</td>
+</tr>
+<tr>
+<td><code>GET /github/repos</code> · <code>POST /github/repos</code></td>
+<td>List repositories / create a new one</td>
+</tr>
+<tr>
+<td><code>PUT /github/default-repo</code></td>
+<td>Choose the repository for pushes</td>
+</tr>
+<tr>
+<td><code>DELETE /github/connection</code></td>
+<td>Disconnect and revoke access</td>
+</tr>
+<tr>
+<td><code>POST /workspaces</code> · <code>GET /workspaces/{id}</code></td>
+<td>Create / open a workspace</td>
+</tr>
+<tr>
+<td><code>POST /workspaces/{id}/uploads</code></td>
+<td>Upload a paper, dataset, repository link or note</td>
+</tr>
+<tr>
+<td><code>POST /workspaces/{id}/runs</code></td>
+<td>Start a run with a compute budget</td>
+</tr>
+<tr>
+<td><code>GET /runs/{id}/stream</code></td>
+<td>Live event stream (SSE)</td>
+</tr>
+<tr>
+<td><code>GET /runs/{id}/events</code></td>
+<td>All saved events (for Run Replay)</td>
+</tr>
+<tr>
+<td><code>POST /runs/{id}/checkpoints/{name}</code></td>
+<td>Approve, edit or reject at a checkpoint</td>
+</tr>
+<tr>
+<td><code>POST /runs/{id}/agents/{agent}/action</code></td>
+<td>Pause, stop, retry, instruct, thumbs up or down</td>
+</tr>
+<tr>
+<td><code>GET /runs/{id}/scorecard</code></td>
+<td>Claim Scorecard</td>
+</tr>
+<tr>
+<td><code>GET /runs/{id}/settings</code></td>
+<td>Settings with their sources (Missing Details Log)</td>
+</tr>
+<tr>
+<td><code>POST /runs/{id}/whatif</code></td>
+<td>Ask a what-if question</td>
+</tr>
+<tr>
+<td><code>GET /agents</code> · <code>GET /agents/{id}/history</code></td>
+<td>Team and evolution history</td>
+</tr>
+<tr>
+<td><code>GET /memory/search?q=</code></td>
+<td>Search the Lab Memory</td>
+</tr>
+<tr>
+<td><code>GET/PUT /workspaces/{id}/notes</code></td>
+<td>Markdown notes</td>
+</tr>
+<tr>
+<td><code>POST /runs/{id}/push</code></td>
+<td>Approve and start the GitHub push</td>
+</tr>
+<tr>
+<td><code>POST /workspaces/{id}/share</code></td>
+<td>Create a read-only live link and QR code</td>
+</tr>
+<tr>
+<td><code>POST /telegram/webhook</code></td>
+<td>Telegram messages and voice notes</td>
+</tr>
+<tr>
+<td><code>POST /internal/sandbox/exec</code></td>
+<td>(Internal, used by agents only) run code in a sandbox</td>
+</tr>
+<tr>
+<td><code>POST /internal/push/callback</code></td>
+<td>(Internal, used by n8n only) push result</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="24-outside-services-and-their-free-limits"><span class="sec">24</span><span>Outside services and their free limits</span></h2>
+<p>Limits change often; the numbers below are approximate, from public sources in 2026. Check them on the day.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Service</th>
+<th>Free limit (approximate)</th>
+<th>Our use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Groq</strong></td>
+<td>No card needed; per-model limits, roughly 30 requests per minute and 1,000 to 14,400 requests per day depending on model; Whisper about 2,000 requests per day</td>
+<td>Main AI and speech to text</td>
+</tr>
+<tr>
+<td><strong>Gemini API</strong></td>
+<td>Flash models are free with daily limits (roughly 250 to 1,500 requests per day by model)</td>
+<td>Long paper reading, images, backup AI</td>
+</tr>
+<tr>
+<td><strong>GitHub API</strong></td>
+<td>5,000 requests per hour per user</td>
+<td>Repositories and pushes</td>
+</tr>
+<tr>
+<td><strong>Kaggle</strong></td>
+<td>About 30 GPU hours per week (shown in your account)</td>
+<td>Bigger runs</td>
+</tr>
+<tr>
+<td><strong>Semantic Scholar, OpenAlex, arXiv</strong></td>
+<td>Free public APIs with fair-use limits</td>
+<td>Finding papers, code and datasets</td>
+</tr>
+<tr>
+<td><strong>Hugging Face</strong></td>
+<td>Free datasets, models and model hosting</td>
+<td>Datasets, pretrained models, large model files</td>
+</tr>
+<tr>
+<td><strong>Telegram Bot API</strong></td>
+<td>Free</td>
+<td>Mobile control and notifications</td>
+</tr>
+<tr>
+<td><strong>Cloudflare Tunnel</strong></td>
+<td>Free</td>
+<td>Public link to our laptop</td>
+</tr>
+<tr>
+<td><strong>Vercel</strong></td>
+<td>Free hobby plan</td>
+<td>Frontend hosting</td>
+</tr>
+<tr>
+<td><strong>E2B</strong></td>
+<td>One-time free credit for new accounts</td>
+<td>Optional cloud sandbox backup</td>
+</tr>
+<tr>
+<td><strong>n8n, Docker, PostgreSQL, Redis, Docling, Kokoro, Gitleaks, LangGraph, Excalidraw</strong></td>
+<td>Free and open-source, run on our machine</td>
+<td>Core parts of the system</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="25-all-screens"><span class="sec">25</span><span>All screens</span></h2>
+<ol>
+<li><strong>Login</strong> — "Continue with GitHub".</li>
+<li><strong>Profile</strong> — account details, GitHub status, chosen repository, list of pushed repositories, Disconnect button.</li>
+<li><strong>New Workspace</strong> — upload area for papers (required), optional dataset, repository link and note, and the compute budget choice.</li>
+<li><strong>Live Agent Board</strong> (opens in a new tab after upload) — one card per agent with its current task in one sentence, status colour, a "why" line, cost so far, and control buttons. A top bar shows the overall stage: Research → Plan approval → Coding → Testing → What-ifs → Push.</li>
+<li><strong>Research Map</strong> — the live Excalidraw map. Shown in full at Checkpoint 1 with Approve / Edit / Reject buttons.</li>
+<li><strong>Results page</strong> (replaces the Live Board when all agents finish) — summary at the top, then tabs:
+   - <strong>Research</strong> — Research Brief, Claims List, sources, recommendation.
+   - <strong>Coding</strong> — files, code viewer, run logs, the repair history (each error and its fix).
+   - <strong>Testing</strong> — test list with pass/fail, and the Claim Scorecard.
+   - <strong>Scorecard</strong> — paper vs our numbers, with the PDF highlight view and Gap Detective explanation.
+   - <strong>What-ifs</strong> — the branch tree and results.
+   - <strong>Team</strong> — agent scores, Team Evolution timeline, decisions with reasons.
+   - <strong>Memory</strong> — what was learned in this run, and what was reused from earlier runs.
+   - <strong>Notes</strong> — Markdown notes from the researcher and agents.
+   - Clicking an agent card opens its full work in a new browser tab, as planned.</li>
+<li><strong>Run Replay</strong> — the timeline player.</li>
+<li><strong>Shared live view</strong> — the read-only version for teammates and judges (opened by QR code).</li>
+<li><strong>Mobile view</strong> — the same pages arranged for a phone, with large Approve / Reject buttons.</li>
+</ol>
+<h2 id="26-ui-and-ux-design-guidance"><span class="sec">26</span><span>UI and UX design guidance</span></h2>
+<ul>
+<li><strong>Not a chat app.</strong> The problem statement says the interface must not reduce everything to "a simple notebook or chat interface". Our main screen is a board of agents and a map; chat is only a small side panel for instructions.</li>
+<li><strong>One sentence per card.</strong> Each agent card shows what it is doing now in plain words. Details open on click.</li>
+<li><strong>Always show "why".</strong> Every decision has a short reason under it.</li>
+<li><strong>Consistent colours:</strong> grey = waiting, blue = working, green = done or matched, amber = close or assumption, red = problem or different.</li>
+<li><strong>Numbers always clickable.</strong> Clicking any result number shows its proof (Hero 2).</li>
+<li><strong>Calm design:</strong> a light background, one accent colour, clear fonts, enough spacing. A dark mode for long sessions.</li>
+<li><strong>Phone first for approvals:</strong> approval buttons are large and placed at the bottom of the screen on phones.</li>
+</ul>
+<h2 id="27-demo-script-for-the-judges-7-minutes"><span class="sec">27</span><span>Demo script for the judges (7 minutes)</span></h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Time</th>
+<th>What we show</th>
+<th>What we say (simple)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0:00–0:45</td>
+<td>The problem slide with 2 facts</td>
+<td>"70% of researchers have failed to reproduce someone else's experiment. AI tools that try to help sometimes invent result numbers."</td>
+</tr>
+<tr>
+<td>0:45–1:30</td>
+<td>Log in with GitHub, upload the Distillation paper, choose "Quick" budget</td>
+<td>"The researcher gives only the paper. Everything else is optional."</td>
+</tr>
+<tr>
+<td>1:30–2:30</td>
+<td>Live Agent Board: Team Manager creates the skills list and a "Dataset Subset Planner" specialist</td>
+<td>"The team is not fixed. The manager just created a new agent, and here is why."</td>
+</tr>
+<tr>
+<td>2:30–3:15</td>
+<td>Research Map at Checkpoint 1; approve the plan</td>
+<td>"Before any code is written, the researcher sees and approves the plan."</td>
+</tr>
+<tr>
+<td>3:15–4:15</td>
+<td>Coding Agent hits an error and fixes it from memory; judges watch on their phones via the QR code</td>
+<td>"This error was fixed in under a second, because the system learned it in an earlier run."</td>
+</tr>
+<tr>
+<td>4:15–5:15</td>
+<td>Claim Scorecard: click a number, PDF highlight + log line; Gap Detective explanation</td>
+<td>"Every number has proof. And when our result differs, we test why."</td>
+</tr>
+<tr>
+<td>5:15–6:00</td>
+<td>Voice note on Telegram: "Try temperature 5 as a new branch"; What-If tree grows; weak branches stop early</td>
+<td>"The researcher can control the lab from a phone, by voice."</td>
+</tr>
+<tr>
+<td>6:00–6:40</td>
+<td>Team tab: an agent retired with its reason; GitHub repository with meaningful commits and the badge</td>
+<td>"Agents are scored on results, cost and feedback. Everything ends in the researcher's GitHub."</td>
+</tr>
+<tr>
+<td>6:40–7:00</td>
+<td>Closing line</td>
+<td>"One workspace where an evolving AI team reproduces, tests, explains and extends research — on a laptop, for ₹0."</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Important:</strong> we pre-run the full demo once on the same laptop. If the internet fails, we use Run Replay of the pre-recorded run, which looks exactly like a live run.</p>
+<h2 id="28-ppt-round-slide-plan"><span class="sec">28</span><span>PPT round: slide plan</span></h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Slide</th>
+<th>Title</th>
+<th>Content</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Title</td>
+<td>Problem statement name, team name, one-line summary</td>
+</tr>
+<tr>
+<td>2</td>
+<td>The problem</td>
+<td>3 facts from Section 3, with sources</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Who suffers and why</td>
+<td>The 8 manual steps from Section 2.2 as a simple flow</td>
+</tr>
+<tr>
+<td>4</td>
+<td>What existing tools miss</td>
+<td>The table from Section 5 (short version)</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Our solution</td>
+<td>The 5 parts from Section 6 in one diagram</td>
+</tr>
+<tr>
+<td>6</td>
+<td>The workflow</td>
+<td>Upload → Research → Map + approval → Code → Test → Gap → What-if → GitHub</td>
+</tr>
+<tr>
+<td>7</td>
+<td>The evolving agent team</td>
+<td>Team Manager, core agents, specialists, the score formula, the life stages</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Our USP: every number has proof</td>
+<td>Scorecard screenshot with the PDF highlight and log line</td>
+</tr>
+<tr>
+<td>9</td>
+<td>Hero features</td>
+<td>Gap Detective, Lab Memory, What-If Branches, Research Map, voice control, Paper vs Paper</td>
+</tr>
+<tr>
+<td>10</td>
+<td>Architecture and tech stack</td>
+<td>Diagram from Section 19, all free tools</td>
+</tr>
+<tr>
+<td>11</td>
+<td>Demo plan and result</td>
+<td>The paper we reproduce, its claims, what-ifs; QR code for the live view</td>
+</tr>
+<tr>
+<td>12</td>
+<td>Cost and impact</td>
+<td>₹0 cost table; who benefits; future scope</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="29-judge-questions-and-our-answers"><span class="sec">29</span><span>Judge questions and our answers</span></h2>
+<ul>
+<li><strong>"Your three agents are fixed. Isn't that what the problem statement says to avoid?"</strong> — No. The three are the starting team. The Team Manager creates specialists from recipes when a skill is missing, and refines, merges, replaces or retires agents based on their scores. The Team tab shows every such decision with its reason.</li>
+<li><strong>"How do you know the AI didn't make up the results?"</strong> — The AI is never allowed to write result numbers. Every number comes from <code>metrics.json</code> written by code that ran in the sandbox, saved with the run ID, commit and log fingerprint. Any number in AI-written text that is not in the database is removed.</li>
+<li><strong>"What is the reward in your reward loop?"</strong> — A score from 0 to 1 per task: 50% outcome, 20% researcher feedback, minus 20% cost, minus 10% wasted tries. It is saved per agent and per skill.</li>
+<li><strong>"How does the system get better over time?"</strong> — Three ways: error fixes are reused from Lab Memory; the Team Manager prefers agents with better past scores for each skill; settings that worked before are suggested for similar papers. We show a second run being faster than the first.</li>
+<li><strong>"Is running AI-written code safe?"</strong> — It runs only inside a fresh Docker container with CPU, memory, time and process limits, no internet during execution, a non-administrator user, and read-only inputs.</li>
+<li><strong>"Why Go and Python both?"</strong> — Go handles the web server, live streaming, sandbox control and security very efficiently. Python is needed because ML code and LangGraph are in Python. Each language does what it is best at.</li>
+<li><strong>"What happens when Groq's free limit runs out?"</strong> — The router switches to Gemini automatically. We also cache the paper reading and use small models for small tasks.</li>
+<li><strong>"Why are your results different from the paper?"</strong> — (Show the Gap Detective.) Each difference is tested with a small experiment, and the explanation is backed by those results.</li>
+<li><strong>"Can it work with other papers?"</strong> — Yes. The paper is an input. For a new field, the Team Manager creates a domain specialist. We also have backup papers ready (Section 13.3).</li>
+<li><strong>"What does it cost?"</strong> — ₹0. Every tool is free or open-source, and compute is our laptop plus free Kaggle and Colab.</li>
+<li><strong>"Why not just use ChatGPT?"</strong> — Chat tools do not run the code end to end, do not test against the paper's claims, do not keep proof, do not learn across runs, and do not push a complete project to GitHub.</li>
+</ul>
+<h2 id="30-build-plan-and-team-roles"><span class="sec">30</span><span>Build plan and team roles</span></h2>
+<p><strong>Suggested roles for a team of 4</strong> (adjust to our team size):</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Person</th>
+<th>Main work</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Member 1 — Frontend</strong></td>
+<td>Next.js screens: upload, Live Agent Board, Results tabs, Scorecard with PDF highlight, mobile layout</td>
+</tr>
+<tr>
+<td><strong>Member 2 — Go backend</strong></td>
+<td>Login and GitHub, workspaces, uploads, SSE events, sandbox control, rate limiter, Telegram bot</td>
+</tr>
+<tr>
+<td><strong>Member 3 — Agents</strong></td>
+<td>LangGraph graph: Team Manager, Research, Coding, Testing, scoring and evolution, memory</td>
+</tr>
+<tr>
+<td><strong>Member 4 — ML, sandbox and automation</strong></td>
+<td>Sandbox images, demo paper runs, Gap Detective experiments, n8n workflow, Excalidraw map, PPT</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Order of building (most important first):</strong></p>
+<ol>
+<li><strong>Base (first quarter of the time):</strong> docker-compose (Postgres, Redis, n8n), Go server with GitHub login, upload, a run that streams fake events to the Live Board.</li>
+<li><strong>Core loop (second quarter):</strong> Paper Reader → Claims List; Code Writer → sandbox run → Debugger loop; <code>metrics.json</code> → Claim Scorecard. Get the Distillation paper working end to end.</li>
+<li><strong>What makes us win (third quarter):</strong> Gap Detective, What-If Branches, Team Manager specialists and scoring, Lab Memory reuse, Research Map.</li>
+<li><strong>Polish and demo (last quarter):</strong> GitHub push through n8n, Telegram voice, Live share link with QR, audio briefing, Run Replay, PPT, two full rehearsals.</li>
+</ol>
+<p><strong>Rule:</strong> after each step, the demo must still work end to end. We never leave the project in a broken state for more than one hour.</p>
+<h2 id="31-risks-and-backup-plans"><span class="sec">31</span><span>Risks and backup plans</span></h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Risk</th>
+<th>Backup plan</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Groq or Gemini limit reached during the demo</td>
+<td>Automatic fallback between providers; cached paper reading; separate test and demo accounts</td>
+</tr>
+<tr>
+<td>Internet fails at the venue</td>
+<td>Phone hotspot; Run Replay of a pre-recorded run; local models where possible</td>
+</tr>
+<tr>
+<td>The agent writes code that keeps failing</td>
+<td>Retry limit, Lab Memory fixes, and the main paper pre-run so known errors are already in memory</td>
+</tr>
+<tr>
+<td>Training is too slow on stage</td>
+<td>"Quick" budget pre-tested; ready-made sandbox images; Kaggle as backup</td>
+</tr>
+<tr>
+<td>Docker problems on Windows</td>
+<td>Use WSL2 with Docker Desktop; test on the demo laptop early; E2B as a cloud backup</td>
+</tr>
+<tr>
+<td>n8n push fails</td>
+<td>Direct push from Go with the same steps</td>
+</tr>
+<tr>
+<td>TabPFN model download needs login</td>
+<td>Test before the event; if blocked, compare XGBoost vs a neural network only</td>
+</tr>
+<tr>
+<td>Excalidraw map takes too long to build</td>
+<td>Show the same graph with React Flow first; switch to Excalidraw style if time allows</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="32-cost"><span class="sec">32</span><span>Cost</span></h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Cost</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>AI models (Groq, Gemini free tiers)</td>
+<td>₹0</td>
+</tr>
+<tr>
+<td>Speech to text (Groq Whisper) and text to speech (Kokoro)</td>
+<td>₹0</td>
+</tr>
+<tr>
+<td>Database, queue, automation, sandbox (Postgres, Redis, n8n, Docker on our laptop)</td>
+<td>₹0</td>
+</tr>
+<tr>
+<td>Compute (our laptop, free Kaggle and Colab)</td>
+<td>₹0</td>
+</tr>
+<tr>
+<td>Hosting (Vercel free plan, Cloudflare Tunnel)</td>
+<td>₹0</td>
+</tr>
+<tr>
+<td>GitHub, Telegram, Hugging Face, paper search APIs</td>
+<td>₹0</td>
+</tr>
+<tr>
+<td><strong>Total</strong></td>
+<td><strong>₹0</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Optional spend (only if useful, within our ₹500 limit):</strong> a cheap domain name for the first year (usually a few hundred rupees, prices vary) gives a fixed, clean link for the QR code. Without it, the free Cloudflare Tunnel link works but changes each time we restart it.</p>
+<h2 id="33-notes-from-our-research-on-past-winners"><span class="sec">33</span><span>Notes from our research on past winners</span></h2>
+<ul>
+<li>We searched for public results of past RGIT (Recursion, by RGIT CodeCell) and DJSCE hackathons. Their past winner lists and projects are <strong>not published online in detail</strong>, so we could not study specific winning projects. We should ask seniors or check the organisers' social media pages.</li>
+<li>Common patterns from winning teams at AI hackathons, which we follow in this plan:
+  1. <strong>A working live demo beats slides.</strong> Judges trust what they see running.
+  2. <strong>One clear story.</strong> "Upload a paper → watch the team reproduce it → see proof → ask what if."
+  3. <strong>Map the solution to the problem statement line by line</strong> (our table in Section 2.3).
+  4. <strong>Real numbers, not claims.</strong> Our USP is exactly this.
+  5. <strong>One memorable moment.</strong> Judges watching the live run on their own phones through the QR code, and a voice command changing the experiment.
+  6. <strong>Be honest about limits.</strong> Showing where results differ, and why, builds more trust than claiming perfect results.</li>
+</ul>
+<h2 id="34-glossary"><span class="sec">34</span><span>Glossary</span></h2>
+<ul>
+<li><strong>Reproduce a paper:</strong> run the paper's method again and check if you get the same results.</li>
+<li><strong>Claim:</strong> a result the paper reports, for example "74 test errors".</li>
+<li><strong>Agent:</strong> an AI program that works on a task on its own, using tools (for example, running code).</li>
+<li><strong>Sub-agent:</strong> a smaller agent that does one part of a bigger agent's job.</li>
+<li><strong>Meta-controller (Team Manager):</strong> the agent that decides which agents are needed and manages the team.</li>
+<li><strong>Reward loop:</strong> scoring each agent after each task and using the scores to improve the team.</li>
+<li><strong>Sandbox:</strong> an isolated box where code runs without being able to harm the computer.</li>
+<li><strong>Docker / container:</strong> a tool that creates such isolated boxes with exact software versions.</li>
+<li><strong>LangGraph:</strong> a free Python library to build teams of AI agents as a graph of steps, with loops, pauses for approval and saved progress.</li>
+<li><strong>Checkpoint:</strong> a point where the system pauses and waits for the researcher's approval.</li>
+<li><strong>Embedding / pgvector:</strong> a way to turn text into numbers so we can search by meaning; pgvector stores these in PostgreSQL.</li>
+<li><strong>SSE (Server-Sent Events):</strong> a simple way for the server to send live updates to the browser.</li>
+<li><strong>OAuth:</strong> the standard "Log in with GitHub" method, where GitHub gives us permission without sharing the password.</li>
+<li><strong>n8n:</strong> a free, open-source tool to build automated workflows with boxes and arrows.</li>
+<li><strong>Distillation:</strong> training a small model to copy the "soft" answers of a big model.</li>
+<li><strong>Temperature:</strong> a setting that makes a model's answers softer (more spread out), which helps the small model learn more.</li>
+<li><strong>Successive halving:</strong> start many experiments with a small budget, stop the weaker half, repeat.</li>
+<li><strong>Hash (fingerprint):</strong> a short code calculated from a file; if the file changes, the code changes. It proves a log was not edited.</li>
+<li><strong>Seed:</strong> a number that controls randomness; different seeds give slightly different results.</li>
+<li><strong>Epoch:</strong> one full pass of training over the whole dataset.</li>
+<li><strong>OCR:</strong> reading text from an image or scanned page.</li>
+<li><strong>arXiv source:</strong> the original LaTeX files of a paper that arXiv provides for download.</li>
+<li><strong>Excalidraw:</strong> a free tool for hand-drawn style diagrams.</li>
+<li><strong>Whisper:</strong> a speech-to-text model. <strong>TTS:</strong> text to speech.</li>
+</ul>
+<h2 id="35-sources"><span class="sec">35</span><span>Sources</span></h2>
+<p><strong>The problem</strong>
+- <a href="https://www.nature.com/articles/533452a" target="_blank" rel="noopener noreferrer">Nature: 1,500 scientists lift the lid on reproducibility</a>
+- <a href="https://www.technologyreview.com/f/610294/researchers-are-struggling-to-replicate-ai-studies/" target="_blank" rel="noopener noreferrer">MIT Technology Review: Researchers are struggling to replicate AI studies</a>
+- <a href="https://www.greaterwrong.com/posts/j4FnzvwTnReC3bH5y/what-we-know-about-machine-learning-s-replication-crisis" target="_blank" rel="noopener noreferrer">What we know about machine learning's replication crisis</a>
+- <a href="https://arxiv.org/pdf/2606.16974" target="_blank" rel="noopener noreferrer">The Shift Toward Open and Reproducible AI Research (2026)</a>
+- <a href="https://arxiv.org/pdf/2409.11363" target="_blank" rel="noopener noreferrer">CORE-Bench: computational reproducibility agent benchmark</a></p>
+<p><strong>Existing AI research agents</strong>
+- <a href="https://openai.com/index/paperbench" target="_blank" rel="noopener noreferrer">OpenAI: PaperBench</a>
+- <a href="https://arxiv.org/abs/2504.01848v1" target="_blank" rel="noopener noreferrer">PaperBench paper (arXiv 2504.01848)</a>
+- <a href="https://arxiv.org/pdf/2504.17192" target="_blank" rel="noopener noreferrer">Paper2Code / PaperCoder (arXiv 2504.17192)</a>
+- <a href="https://www.alphaxiv.org/abs/2502.14297v3" target="_blank" rel="noopener noreferrer">Evaluating Sakana's AI Scientist</a>
+- <a href="https://isg.beel.org/wp-content/uploads/2025/07/AI-Scientist-in-Practice-Reproducing-and-Evaluating-Autonomous.pdf" target="_blank" rel="noopener noreferrer">AI Scientist in Practice (Beel et al.)</a>
+- <a href="https://arxiv.org/pdf/2501.04227" target="_blank" rel="noopener noreferrer">Agent Laboratory (arXiv 2501.04227)</a>
+- <a href="https://sakana.ai/dgm/" target="_blank" rel="noopener noreferrer">Darwin Gödel Machine (Sakana AI)</a>
+- <a href="https://iclr.cc/virtual/2025/poster/28073" target="_blank" rel="noopener noreferrer">Automated Design of Agentic Systems (ICLR 2025)</a>
+- <a href="https://hyper.ai/en/news/42900" target="_blank" rel="noopener noreferrer">Papers with Code shutdown and Hugging Face Trending Papers</a></p>
+<p><strong>AI and tools</strong>
+- <a href="https://eesel.ai/blog/groq-pricing" target="_blank" rel="noopener noreferrer">Groq pricing and free tier 2026</a>
+- <a href="https://groq.com/blog/canopy-labs-orpheus-tts-is-live-on-groqcloud" target="_blank" rel="noopener noreferrer">Groq: Orpheus text to speech on GroqCloud</a>
+- <a href="https://yingtu.ai/en/blog/google-gemini-api-free-tier-limits-2026" target="_blank" rel="noopener noreferrer">Gemini API free tier limits 2026</a>
+- <a href="https://agentdeals.dev/gemini-api-pricing-changes" target="_blank" rel="noopener noreferrer">Gemini API pricing changes, April 2026</a>
+- <a href="https://themenonlab.blog/blog/best-open-source-pdf-to-markdown-tools-2026" target="_blank" rel="noopener noreferrer">Best open-source PDF to Markdown tools 2026 (Marker, Docling and others)</a>
+- <a href="https://scrp.econ.cuhk.edu.hk/blog/analysis/2026/07/31/pdf-processing" target="_blank" rel="noopener noreferrer">Comparison of four PDF processing methods (CUHK, 2026)</a></p>
+<p><strong>Compute</strong>
+- <a href="https://www.e2b.dev/pricing" target="_blank" rel="noopener noreferrer">E2B pricing</a>
+- <a href="https://linuxcommandlibrary.com/man/kaggle-kernels" target="_blank" rel="noopener noreferrer">Kaggle kernels command line</a>
+- <a href="https://gpuperhour.com/blog/free-cloud-gpus-and-credits" target="_blank" rel="noopener noreferrer">Free cloud GPUs in 2026</a></p>
+<p><strong>Past hackathons</strong>
+- <a href="https://fetch.ai/events/recursion-5-0-rgit-mumbai" target="_blank" rel="noopener noreferrer">Recursion 5.0, RGIT Mumbai (Fetch.ai event page)</a></p>
+    </article>
+    <p class="foot">This page is built from <code>allaboutourproject.md</code> in the project folder. Edit that file, and ask Claude to republish this page.</p>
+  </main>
+</div>
+<script>
+(function () {
+  var links = Array.prototype.slice.call(document.querySelectorAll('.toc a'));
+  var heads = Array.prototype.slice.call(document.querySelectorAll('.prose h2[id]'));
+  if (!('IntersectionObserver' in window) || !heads.length) return;
+  var byId = {};
+  links.forEach(function (a) { byId[a.getAttribute('href').slice(1)] = a; });
+  var current = null;
+  var observer = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (!entry.isIntersecting || current === entry.target.id) return;
+      current = entry.target.id;
+      links.forEach(function (a) { a.removeAttribute('aria-current'); });
+      var link = byId[current];
+      if (link) link.setAttribute('aria-current', 'true');
+    });
+  }, { rootMargin: '0px 0px -70% 0px', threshold: 0 });
+  heads.forEach(function (h) { observer.observe(h); });
+})();
+</script>
+</body>
+</html>
