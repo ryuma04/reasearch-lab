@@ -28,6 +28,7 @@ const TABS = [
   { seg: "/live", label: "Live board" },
   { seg: "/map", label: "Research map" },
   { seg: "/explorer", label: "Gap Explorer" },
+  { seg: "/sandbox", label: "Code sandbox" },
   { seg: "/results/research", label: "Results", match: "/results" },
   { seg: "/replay", label: "Replay" },
   { seg: "/publish", label: "Publish" },

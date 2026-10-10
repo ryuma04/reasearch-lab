@@ -1,14 +1,15 @@
-// Package sandbox runs agent-written code in a fresh, limited Docker container per execution,
-// and turns results/metrics.json into proof-linked metrics (Hero 2: no number without proof).
+// Package sandbox runs agent-written and researcher-edited code in a fresh, locked-down Docker
+// container per execution (Docker SDK for Go), and turns results/metrics.json into validated,
+// proof-linked metrics (Hero 2: no number without proof).
 //
-// Safety rules (allaboutourproject.md 16.2): CPU/memory/process/time limits, network only in
-// the install phase, non-root user, no capabilities, only the run's project folder is mounted
-// (read-write) plus the workspace uploads (read-only).
+// Safety rules (allaboutourproject.md 16.2): CPU/memory/process/time limits enforced by Docker,
+// network only in the install phase, non-root user, all capabilities dropped, no-new-privileges,
+// read-only root filesystem, the project mounted read-only with only results/, models/, data/
+// and caches writable, the workspace uploads read-only, never the Docker socket.
 package sandbox
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -23,11 +24,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	units "github.com/docker/go-units"
 
 	"github.com/ryuma04/tapu-sena/backend/internal/bus"
 	"github.com/ryuma04/tapu-sena/backend/internal/config"
@@ -36,19 +39,105 @@ import (
 )
 
 const (
-	maxTimeout  = 3 * time.Hour
 	logTailSize = 12 << 10
+	// maxLogBytes stops a print loop from filling the disk.
+	maxLogBytes = 50 << 20
+	verifyTimeout = 3 * time.Minute
 )
 
 type Service struct {
-	cfg   *config.Config
-	store *store.Store
-	bus   *bus.Bus
-	gitMu sync.Mutex
+	cfg    *config.Config
+	store  *store.Store
+	bus    *bus.Bus
+	engine *Engine
+	gitMu  sync.Mutex
+
+	mu       sync.Mutex
+	base     context.Context // server lifetime: shutdown kills running containers
+	active   map[int64]*activeExec
+	runLocks map[int64]chan struct{}
+
+	limitsMu    sync.Mutex
+	limitsKnown bool
+	limits      Limits
+}
+
+type activeExec struct {
+	runID  int64
+	cancel context.CancelCauseFunc
 }
 
 func New(cfg *config.Config, st *store.Store, b *bus.Bus) *Service {
-	return &Service{cfg: cfg, store: st, bus: b}
+	return NewWithRunner(cfg, st, b, NewDockerRunner())
+}
+
+// NewWithRunner lets tests replace Docker with a fake runner.
+func NewWithRunner(cfg *config.Config, st *store.Store, b *bus.Bus, r Runner) *Service {
+	root := cfg.DataDir
+	if cfg.SandboxHostDataDir != "" {
+		root = cfg.SandboxHostDataDir
+	}
+	return &Service{cfg: cfg, store: st, bus: b, engine: &Engine{Runner: r, AllowedRoot: root},
+		base: context.Background(), active: map[int64]*activeExec{}, runLocks: map[int64]chan struct{}{}}
+}
+
+// Startup ties executions to the server's lifetime, removes containers left by a crash and
+// marks executions that were interrupted by a restart.
+func (s *Service) Startup(ctx context.Context) {
+	s.mu.Lock()
+	s.base = ctx
+	s.mu.Unlock()
+	if s.store != nil {
+		_, _ = s.store.Pool.Exec(ctx, `UPDATE sandbox_execs SET status='error', finished_at=now(),
+			error='the API server stopped during this execution' WHERE status IN ('queued','running')`)
+	}
+	go func() {
+		cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		if n, err := s.engine.Runner.RemoveStale(cctx); err == nil && n > 0 {
+			slog.Info("removed leftover sandbox containers", "count", n)
+		}
+	}()
+}
+
+// Limits returns the configured limits adapted to the Docker host's real CPUs and memory.
+func (s *Service) Limits(ctx context.Context) Limits {
+	s.limitsMu.Lock()
+	defer s.limitsMu.Unlock()
+	if s.limitsKnown {
+		return s.limits
+	}
+	want := ConfiguredLimits(s.cfg)
+	cpus, mem, err := s.engine.Runner.HostResources(ctx)
+	if err != nil {
+		return want // Docker is down; ask again next time
+	}
+	s.limits, s.limitsKnown = EffectiveLimits(want, cpus, mem), true
+	if s.limits != want {
+		slog.Info("sandbox limits adapted to the Docker host", "cpus", s.limits.CPUs(), "memory", units.BytesSize(float64(s.limits.MemoryBytes)))
+	}
+	return s.limits
+}
+
+// ConfiguredLimits parses SANDBOX_CPUS / SANDBOX_MEMORY / SANDBOX_PIDS / SANDBOX_TMPFS.
+func ConfiguredLimits(cfg *config.Config) Limits {
+	cpus, err := strconv.ParseFloat(cfg.SandboxCPUs, 64)
+	if err != nil || cpus <= 0 {
+		cpus = 2
+	}
+	mem, err := units.RAMInBytes(cfg.SandboxMemory)
+	if err != nil || mem <= 0 {
+		mem = 4 << 30
+	}
+	pids, err := strconv.ParseInt(cfg.SandboxPids, 10, 64)
+	if err != nil || pids <= 0 {
+		pids = 256
+	}
+	tmpfs, err := units.RAMInBytes(cfg.SandboxTmpfs)
+	if err != nil || tmpfs <= 0 {
+		tmpfs = 512 << 20
+	}
+	return Limits{NanoCPUs: int64(cpus * 1e9), MemoryBytes: mem, Pids: pids, TmpfsBytes: tmpfs}
 }
 
 // ProjectRel is the DATA_DIR-relative project folder of a run. The agent never chooses paths.
@@ -60,6 +149,76 @@ func (s *Service) ProjectDir(wsID, runID int64) string {
 	return filepath.Join(s.cfg.DataDir, filepath.FromSlash(ProjectRel(wsID, runID)))
 }
 
+// hostPath is how the Docker daemon sees a DATA_DIR path (differs when the API runs in Docker).
+func (s *Service) hostPath(p string) string {
+	if s.cfg.SandboxHostDataDir == "" {
+		return p
+	}
+	rel, _ := filepath.Rel(s.cfg.DataDir, p)
+	return filepath.Join(s.cfg.SandboxHostDataDir, rel)
+}
+
+// ---------- per-run serialisation and cancellation ----------
+
+func (s *Service) runLock(runID int64) chan struct{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	l, ok := s.runLocks[runID]
+	if !ok {
+		l = make(chan struct{}, 1)
+		s.runLocks[runID] = l
+	}
+	return l
+}
+
+// lockRun waits for the run's previous execution (the agent waits for a researcher's run).
+func (s *Service) lockRun(ctx context.Context, runID int64) (func(), error) {
+	l := s.runLock(runID)
+	select {
+	case l <- struct{}{}:
+		return func() { <-l }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// tryLockRun fails immediately when the run already has an execution in progress.
+func (s *Service) tryLockRun(runID int64) (func(), bool) {
+	l := s.runLock(runID)
+	select {
+	case l <- struct{}{}:
+		return func() { <-l }, true
+	default:
+		return nil, false
+	}
+}
+
+func (s *Service) register(execID, runID int64, cancel context.CancelCauseFunc) {
+	s.mu.Lock()
+	s.active[execID] = &activeExec{runID: runID, cancel: cancel}
+	s.mu.Unlock()
+}
+
+func (s *Service) unregister(execID int64) {
+	s.mu.Lock()
+	delete(s.active, execID)
+	s.mu.Unlock()
+}
+
+// CancelExec kills a running execution's container. Returns false if it is not running here.
+func (s *Service) CancelExec(execID int64) bool {
+	s.mu.Lock()
+	a := s.active[execID]
+	s.mu.Unlock()
+	if a == nil {
+		return false
+	}
+	a.cancel(errCancelled)
+	return true
+}
+
+// ---------- agent endpoint ----------
+
 type ExecRequest struct {
 	RunID          int64             `json:"run_id"`
 	Phase          string            `json:"phase"` // install | execute | test
@@ -69,6 +228,10 @@ type ExecRequest struct {
 	Env            map[string]string `json:"env"`
 	Agent          string            `json:"agent"`
 	CollectMetrics *bool             `json:"collect_metrics"`
+	// Attempt is the Coding Agent's write -> run -> fix attempt number (1 = first run).
+	Attempt int `json:"attempt"`
+	// RequiredMetrics must all be present in metrics.json for the execution to succeed.
+	RequiredMetrics []string `json:"required_metrics"`
 }
 
 type MetricOut struct {
@@ -80,16 +243,29 @@ type MetricOut struct {
 }
 
 type ExecResult struct {
-	ExecID      int64       `json:"exec_id"`
-	ExitCode    int         `json:"exit_code"`
-	TimedOut    bool        `json:"timed_out"`
-	DurationMs  int64       `json:"duration_ms"`
-	LogPath     string      `json:"log_path"`
-	LogHash     string      `json:"log_hash"`
-	LogTail     string      `json:"log_tail"`
-	CodeVersion string      `json:"code_version"`
-	Metrics     []MetricOut `json:"metrics"`
-	MetricsErr  string      `json:"metrics_error,omitempty"`
+	ExecID        int64       `json:"exec_id"`
+	RunID         int64       `json:"run_id"`
+	Phase         string      `json:"phase"`
+	Status        string      `json:"status"` // succeeded | failed | timed_out | cancelled | error
+	Attempt       int         `json:"attempt"`
+	ExitCode      int         `json:"exit_code"`
+	TimedOut      bool        `json:"timed_out"`
+	Cancelled     bool        `json:"cancelled"`
+	DurationMs    int64       `json:"duration_ms"`
+	StartedAt     time.Time   `json:"started_at"`
+	FinishedAt    time.Time   `json:"finished_at"`
+	LogPath       string      `json:"log_path"`
+	StderrPath    string      `json:"stderr_path"`
+	LogHash       string      `json:"log_hash"`
+	LogTail       string      `json:"log_tail"`
+	StderrTail    string      `json:"stderr_tail"`
+	CodeVersion   string      `json:"code_version"`
+	Error         string      `json:"error,omitempty"`
+	Metrics       []MetricOut `json:"metrics"`
+	MetricsStatus string      `json:"metrics_status"`
+	MetricsErr    string      `json:"metrics_error,omitempty"`
+	Artifacts     []Artifact  `json:"artifacts"`
+	Limits        Limits      `json:"limits"`
 }
 
 var envKeyRe = regexp.MustCompile(`^LAB_[A-Z0-9_]{1,40}$`)
@@ -108,6 +284,8 @@ func (s *Service) HandleExec(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// Exec runs an agent's command synchronously (the agent worker waits; no browser request does).
+// Agent commands are shell strings, but they run only inside the container.
 func (s *Service) Exec(ctx context.Context, req ExecRequest) (*ExecResult, error) {
 	if req.Phase != "install" && req.Phase != "execute" && req.Phase != "test" {
 		return nil, httpx.Errorf(http.StatusBadRequest, "phase must be install, execute or test")
@@ -124,11 +302,6 @@ func (s *Service) Exec(ctx context.Context, req ExecRequest) (*ExecResult, error
 	if err != nil {
 		return nil, err
 	}
-	timeout := time.Duration(req.TimeoutSec) * time.Second
-	if timeout <= 0 {
-		timeout = 15 * time.Minute
-	}
-	timeout = min(timeout, maxTimeout)
 	image := s.cfg.SandboxImagePython
 	if req.Image == "r" {
 		image = s.cfg.SandboxImageR
@@ -136,80 +309,371 @@ func (s *Service) Exec(ctx context.Context, req ExecRequest) (*ExecResult, error
 	if req.Agent == "" {
 		req.Agent = "sandbox"
 	}
-
-	project := s.ProjectDir(run.WorkspaceID, run.ID)
-	if err := os.MkdirAll(filepath.Join(project, "logs"), 0o777); err != nil {
-		return nil, err
-	}
-	codeVersion := s.codeVersion(project)
-
-	var execID int64
-	if err := s.store.Pool.QueryRow(ctx, `
-		INSERT INTO sandbox_execs (run_id, phase, command, image, code_version) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-		run.ID, req.Phase, req.Command, image, codeVersion).Scan(&execID); err != nil {
-		return nil, err
-	}
-	logRel := fmt.Sprintf("logs/%s-%d.log", req.Phase, execID)
-	logPath := filepath.Join(project, filepath.FromSlash(logRel))
-	metricsPath := filepath.Join(project, "results", "metrics.json")
-	if req.Phase == "execute" {
-		_ = os.Remove(metricsPath) // a fresh metrics.json must come from this execution
-	}
-
-	s.bus.Emit(ctx, store.Event{RunID: run.ID, Agent: req.Agent, Type: "sandbox_started",
-		Message: fmt.Sprintf("Sandbox %s: %s", req.Phase, shorten(req.Command, 120)),
-		Why:     sandboxWhy(req.Phase),
-		Links:   mustJSON(map[string]any{"exec_id": execID, "log": logRel})})
-
-	start := time.Now()
-	exitCode, timedOut, runErr := s.runContainer(ctx, run, execID, req, image, project, logPath, timeout)
-	dur := time.Since(start)
-	if runErr != nil {
-		slog.Error("sandbox run", "run_id", run.ID, "exec_id", execID, "err", runErr)
-		appendLog(logPath, "\n[sandbox] failed to start: "+runErr.Error()+"\n")
-		exitCode = -1
-	}
-
-	logHash, tail := hashAndTail(logPath)
-	res := &ExecResult{ExecID: execID, ExitCode: exitCode, TimedOut: timedOut, DurationMs: dur.Milliseconds(),
-		LogPath: logRel, LogHash: logHash, LogTail: tail, CodeVersion: codeVersion, Metrics: []MetricOut{}}
-
-	if _, err := s.store.Pool.Exec(ctx, `
-		UPDATE sandbox_execs SET exit_code=$2, timed_out=$3, duration_ms=$4, log_path=$5, log_hash=$6, finished_at=now()
-		WHERE id=$1`, execID, exitCode, timedOut, res.DurationMs, logRel, logHash); err != nil {
-		return nil, err
-	}
-
 	collect := req.Phase == "execute"
 	if req.CollectMetrics != nil {
 		collect = *req.CollectMetrics
 	}
-	if collect && exitCode == 0 {
-		ms, err := s.ingestMetrics(ctx, run.ID, execID, metricsPath, start, logPath, logRel, logHash, codeVersion)
+	j := &job{run: run, phase: req.Phase, agent: req.Agent, source: "agent", attempt: req.Attempt,
+		command: req.Command, argv: []string{"bash", "-c", req.Command}, env: req.Env, image: image,
+		timeout: s.timeout(req.TimeoutSec), collect: collect, required: req.RequiredMetrics}
+
+	unlock, err := s.lockRun(ctx, run.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	execID, err := s.insertExec(ctx, j)
+	if err != nil {
+		return nil, err
+	}
+	// The agent's HTTP request may be dropped; the container still obeys its own time limit,
+	// and server shutdown still kills it.
+	runCtx, cancel := context.WithCancelCause(s.serverCtx())
+	defer cancel(nil)
+	stop := context.AfterFunc(ctx, func() { cancel(context.Canceled) })
+	defer stop()
+	return s.execute(runCtx, cancel, j, execID), nil
+}
+
+func (s *Service) serverCtx() context.Context {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.base
+}
+
+func (s *Service) timeout(sec int) time.Duration {
+	t := time.Duration(sec) * time.Second
+	if t <= 0 {
+		t = time.Duration(s.cfg.SandboxTimeoutSec) * time.Second
+	}
+	return min(t, time.Duration(s.cfg.SandboxMaxTimeoutSec)*time.Second)
+}
+
+// ---------- the shared execution path ----------
+
+type job struct {
+	run        *store.Run
+	phase      string
+	agent      string
+	source     string // agent | user
+	userID     int64
+	attempt    int
+	entrypoint string
+	command    string // shown to people
+	argv       []string
+	env        map[string]string
+	image      string
+	timeout    time.Duration
+	collect    bool
+	required   []string
+}
+
+func (s *Service) insertExec(ctx context.Context, j *job) (int64, error) {
+	if j.attempt <= 0 {
+		var n int
+		_ = s.store.Pool.QueryRow(ctx, `SELECT count(*) FROM sandbox_execs WHERE run_id=$1 AND phase=$2`, j.run.ID, j.phase).Scan(&n)
+		j.attempt = n + 1
+	}
+	var uid *int64
+	if j.userID > 0 {
+		uid = &j.userID
+	}
+	lim, _ := json.Marshal(s.Limits(ctx))
+	var id int64
+	err := s.store.Pool.QueryRow(ctx, `
+		INSERT INTO sandbox_execs (run_id, phase, command, image, status, source, agent, user_id, attempt, entrypoint, limits)
+		VALUES ($1,$2,$3,$4,'running',$5,$6,$7,$8,$9,$10) RETURNING id`,
+		j.run.ID, j.phase, j.command, j.image, j.source, j.agent, uid, j.attempt, j.entrypoint, lim).Scan(&id)
+	return id, err
+}
+
+// writableDirs are the only project folders a container may write to.
+var writableDirs = []string{"results", "models", "data", ".cache", ".pydeps"}
+
+func (s *Service) prepareProject(project string) error {
+	for _, d := range append([]string{"logs"}, writableDirs...) {
+		p, err := ResolveNoSymlink(project, d)
 		if err != nil {
-			res.MetricsErr = err.Error()
-		} else {
-			res.Metrics = ms
+			return err
+		}
+		if err := os.MkdirAll(p, 0o777); err != nil {
+			return err
+		}
+		_ = os.Chmod(p, 0o777) // the container user (uid 1000) must be able to write on Linux hosts
+	}
+	req := filepath.Join(project, "requirements.txt")
+	if _, err := os.Lstat(req); errors.Is(err, os.ErrNotExist) {
+		if err := os.WriteFile(req, nil, 0o666); err != nil {
+			return err
 		}
 	}
-	if codeVersion != "" {
-		_, _ = s.store.Pool.Exec(ctx, `UPDATE runs SET git_commit=$2 WHERE id=$1`, run.ID, codeVersion)
+	_ = os.Chmod(req, 0o666)
+	return nil
+}
+
+// mountsFor: the project is read-only; only the designated output/cache folders are writable.
+// The install phase may also rewrite requirements.txt (exact versions) and download into data/.
+func (s *Service) mountsFor(run *store.Run, project, phase string) []Mount {
+	hp := s.hostPath(project)
+	ms := []Mount{{Source: hp, Target: "/work", ReadOnly: true}}
+	if phase != "verify" {
+		for _, d := range writableDirs {
+			ms = append(ms, Mount{Source: filepath.Join(hp, d), Target: "/work/" + d})
+		}
+		if phase == "install" {
+			ms = append(ms, Mount{Source: filepath.Join(hp, "requirements.txt"), Target: "/work/requirements.txt"})
+		}
+	}
+	uploads := filepath.Join(s.cfg.DataDir, "workspaces", fmt.Sprint(run.WorkspaceID), "uploads")
+	_ = os.MkdirAll(uploads, 0o755)
+	ms = append(ms, Mount{Source: s.hostPath(uploads), Target: "/inputs", ReadOnly: true})
+	return ms
+}
+
+func (s *Service) specFor(j *job, execID int64, project string, lim Limits) Spec {
+	env := map[string]string{
+		"HOME": "/tmp", "PYTHONUSERBASE": "/work/.pydeps", "PIP_CACHE_DIR": "/work/.cache/pip",
+		"PYTHONUNBUFFERED": "1", "PYTHONDONTWRITEBYTECODE": "1", "MPLCONFIGDIR": "/tmp/mpl", "MPLBACKEND": "Agg",
+		"LAB_RUN_ID": fmt.Sprint(j.run.ID), "LAB_PHASE": j.phase, "LAB_BUDGET": j.run.ComputeBudget,
+		// Libraries see all host cores; tell them the container's real CPU limit to avoid oversubscription.
+		"LAB_CPUS": trimFloat(math.Max(1, math.Floor(lim.CPUs()))), "OMP_NUM_THREADS": trimFloat(math.Max(1, math.Floor(lim.CPUs()))),
+		"MKL_NUM_THREADS": trimFloat(math.Max(1, math.Floor(lim.CPUs()))),
+	}
+	for k, v := range j.env {
+		env[k] = v
+	}
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	envList := make([]string, 0, len(keys))
+	for _, k := range keys {
+		envList = append(envList, k+"="+env[k])
+	}
+	return Spec{
+		Name: fmt.Sprintf("lab-run-%d-%d-%s", j.run.ID, execID, j.phase), Image: j.image, Cmd: j.argv, Env: envList,
+		Mounts: s.mountsFor(j.run, project, j.phase), WorkDir: "/work", Network: j.phase == "install", Limits: lim,
+		Labels: map[string]string{"tapu-sena.run": fmt.Sprint(j.run.ID), "tapu-sena.exec": fmt.Sprint(execID)},
+	}
+}
+
+// execute runs one job to completion and records everything. It never returns an error: every
+// failure (including Docker being down) is a recorded execution with a clear message.
+func (s *Service) execute(ctx context.Context, cancel context.CancelCauseFunc, j *job, execID int64) *ExecResult {
+	s.register(execID, j.run.ID, cancel)
+	defer s.unregister(execID)
+	bg := context.WithoutCancel(ctx)
+	run := j.run
+	project := s.ProjectDir(run.WorkspaceID, run.ID)
+	lim := s.Limits(bg)
+	res := &ExecResult{ExecID: execID, RunID: run.ID, Phase: j.phase, Attempt: j.attempt, Metrics: []MetricOut{},
+		Artifacts: []Artifact{}, MetricsStatus: "not_collected", Limits: lim, StartedAt: time.Now(), ExitCode: -1}
+	logRel := fmt.Sprintf("logs/%s-%d.log", j.phase, execID)
+	errRel := fmt.Sprintf("logs/%s-%d.stderr.log", j.phase, execID)
+	res.LogPath, res.StderrPath = logRel, errRel
+
+	fail := func(status, msg string) {
+		res.Status, res.Error = status, msg
+	}
+	if err := s.prepareProject(project); err != nil {
+		fail("error", "could not prepare the workspace: "+err.Error())
+		return s.finish(bg, j, res, project)
+	}
+	res.CodeVersion = s.codeVersion(project)
+	if j.phase == "execute" {
+		if p, err := ResolveNoSymlink(project, "results/metrics.json"); err == nil {
+			_ = os.Remove(p) // a fresh metrics.json must come from this execution
+		}
 	}
 
-	status := "ok"
-	if timedOut {
-		status = "timed out"
-	} else if exitCode != 0 {
-		status = fmt.Sprintf("failed (exit %d)", exitCode)
+	logFile, err1 := createLog(project, logRel)
+	errFile, err2 := createLog(project, errRel)
+	if err1 != nil || err2 != nil {
+		fail("error", fmt.Sprintf("could not create log files: %v %v", err1, err2))
+		return s.finish(bg, j, res, project)
 	}
-	msg := fmt.Sprintf("Sandbox %s %s in %.1fs", req.Phase, status, dur.Seconds())
+	combined := &capWriter{w: logFile, max: maxLogBytes}
+	stderrW := io.MultiWriter(combined, &capWriter{w: errFile, max: maxLogBytes})
+
+	s.bus.Emit(bg, store.Event{RunID: run.ID, Agent: j.agent, Type: "sandbox_started",
+		Message: fmt.Sprintf("Sandbox %s (attempt %d): %s", j.phase, j.attempt, shorten(j.command, 120)),
+		Why:     sandboxWhy(j.phase),
+		Links:   mustJSON(map[string]any{"exec_id": execID, "log": logRel, "attempt": j.attempt, "source": j.source})})
+
+	spec := s.specFor(j, execID, project, lim)
+	out, runErr := s.engine.Run(ctx, spec, j.timeout, combined, stderrW)
+	res.StartedAt, res.FinishedAt = out.Started, out.Finished
+	res.ExitCode, res.TimedOut, res.Cancelled = out.ExitCode, out.TimedOut, out.Cancelled
+	switch {
+	case runErr != nil:
+		msg := runErr.Error()
+		if errors.Is(runErr, ErrDockerUnavailable) {
+			msg = "Docker is not available, so the code was not run. Start Docker Desktop (or the Docker daemon) and try again. (" + runErr.Error() + ")"
+		} else if errors.Is(runErr, context.Canceled) {
+			msg = "the execution was interrupted (the server or agent stopped waiting)"
+		}
+		fmt.Fprintf(combined, "\n[sandbox] %s\n", msg)
+		fail("error", msg)
+	case out.Cancelled:
+		fmt.Fprintf(combined, "\n[sandbox] cancelled by the researcher; container stopped and removed\n")
+		fail("cancelled", "cancelled by the researcher")
+	case out.TimedOut:
+		fmt.Fprintf(combined, "\n[sandbox] time limit of %s reached; container stopped and removed\n", j.timeout)
+		fail("timed_out", fmt.Sprintf("the time limit of %s was reached", j.timeout))
+	case out.ExitCode != 0:
+		msg := fmt.Sprintf("the program exited with code %d", out.ExitCode)
+		if out.OOMKilled || out.ExitCode == 137 {
+			msg = fmt.Sprintf("the container was killed (exit %d), usually because it ran out of memory (limit %s)",
+				out.ExitCode, units.BytesSize(float64(lim.MemoryBytes)))
+			fmt.Fprintf(combined, "\n[sandbox] Killed: %s\n", msg)
+		}
+		fail("failed", msg)
+	default:
+		res.Status = "succeeded"
+	}
+
+	if res.Status == "succeeded" && j.collect {
+		doc, err := LoadMetrics(project, j.required, ArtifactLimits{
+			MaxFileBytes: s.cfg.SandboxMaxArtifactMB << 20, MaxTotalBytes: s.cfg.SandboxMaxArtifactTotalMB << 20})
+		switch {
+		case errors.Is(err, errMetricsMissing):
+			res.MetricsStatus, res.MetricsErr = "missing", err.Error()
+		case err != nil:
+			res.MetricsStatus, res.MetricsErr = "invalid", err.Error()
+		default:
+			res.Artifacts = doc.Artifacts
+			if verr := s.verifyModels(ctx, j, execID, project, lim, res.Artifacts, combined); verr != nil {
+				res.MetricsStatus, res.MetricsErr = "invalid", verr.Error()
+			} else {
+				res.MetricsStatus = "valid"
+				// The log is final only after verification; hash it, then link every number to it.
+				_ = logFile.Sync()
+				hash, _ := hashAndTail(filepath.Join(project, filepath.FromSlash(logRel)))
+				ms, err := s.ingestMetrics(bg, run.ID, execID, doc, filepath.Join(project, filepath.FromSlash(logRel)), logRel, hash, res.CodeVersion)
+				if err != nil {
+					res.MetricsStatus, res.MetricsErr = "invalid", err.Error()
+				} else {
+					res.Metrics = ms
+				}
+			}
+		}
+		if res.MetricsStatus != "valid" {
+			fmt.Fprintf(combined, "\n[sandbox] results rejected: %s\n", res.MetricsErr)
+			fail("failed", "results rejected: "+res.MetricsErr)
+		}
+	}
+	logFile.Close()
+	errFile.Close()
+	return s.finish(bg, j, res, project)
+}
+
+// verifyModels loads every model artifact in a second fresh, offline, read-only container.
+func (s *Service) verifyModels(ctx context.Context, j *job, execID int64, project string, lim Limits, arts []Artifact, log io.Writer) error {
+	type item struct {
+		Path   string `json:"path"`
+		Format string `json:"format"`
+	}
+	var items []item
+	for _, a := range arts {
+		if a.Kind == "model" {
+			items = append(items, item{a.Path, a.Format})
+		}
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	list, _ := json.Marshal(items)
+	fmt.Fprintf(log, "\n[sandbox] verifying that %d saved model(s) load in a fresh container\n", len(items))
+	vj := *j
+	vj.phase, vj.argv, vj.env = "verify", []string{"python", "-I", "-c", verifyScript}, map[string]string{"LAB_VERIFY": string(list)}
+	spec := s.specFor(&vj, execID, project, lim)
+	var buf strings.Builder
+	w := io.MultiWriter(log, &buf)
+	out, err := s.engine.Run(ctx, spec, verifyTimeout, w, w)
+	results := map[string]string{}
+	for _, line := range strings.Split(buf.String(), "\n") {
+		line = strings.TrimSpace(line)
+		if rest, ok := strings.CutPrefix(line, "OK "); ok {
+			p, _, _ := strings.Cut(rest, ": ")
+			results[p] = ""
+		} else if rest, ok := strings.CutPrefix(line, "FAIL "); ok {
+			p, msg, _ := strings.Cut(rest, ": ")
+			results[p] = msg
+		}
+	}
+	var failed []string
+	for i := range arts {
+		if arts[i].Kind != "model" {
+			continue
+		}
+		msg, seen := results[arts[i].Path]
+		ok := seen && msg == "" && err == nil && out.ExitCode == 0
+		arts[i].Verified = &ok
+		if !ok {
+			if msg == "" {
+				msg = "the model could not be loaded"
+			}
+			arts[i].Error = msg
+			failed = append(failed, arts[i].Path+": "+msg)
+		}
+	}
+	switch {
+	case err != nil:
+		return fmt.Errorf("model verification could not run: %v", err)
+	case out.TimedOut || out.Cancelled:
+		return errors.New("model verification did not finish")
+	case len(failed) > 0:
+		return fmt.Errorf("saved model could not be loaded: %s", strings.Join(failed, "; "))
+	}
+	return nil
+}
+
+func (s *Service) finish(ctx context.Context, j *job, res *ExecResult, project string) *ExecResult {
+	if res.FinishedAt.IsZero() {
+		res.FinishedAt = time.Now()
+	}
+	res.DurationMs = res.FinishedAt.Sub(res.StartedAt).Milliseconds()
+	logPath := filepath.Join(project, filepath.FromSlash(res.LogPath))
+	res.LogHash, res.LogTail = hashAndTail(logPath)
+	_, res.StderrTail = hashAndTail(filepath.Join(project, filepath.FromSlash(res.StderrPath)))
+	arts, _ := json.Marshal(res.Artifacts)
+	if _, err := s.store.Pool.Exec(ctx, `
+		UPDATE sandbox_execs SET status=$2, exit_code=$3, timed_out=$4, cancelled=$5, duration_ms=$6, log_path=$7,
+			stderr_path=$8, log_hash=$9, code_version=$10, error=$11, metrics_status=$12, metrics_error=$13,
+			artifacts=$14, started_at=$15, finished_at=$16
+		WHERE id=$1`, res.ExecID, res.Status, res.ExitCode, res.TimedOut, res.Cancelled, res.DurationMs, res.LogPath,
+		res.StderrPath, res.LogHash, res.CodeVersion, shorten(res.Error, 2000), res.MetricsStatus, shorten(res.MetricsErr, 2000),
+		arts, res.StartedAt, res.FinishedAt); err != nil {
+		slog.Error("sandbox: record execution", "exec_id", res.ExecID, "err", err)
+	}
+	if res.CodeVersion != "" {
+		_, _ = s.store.Pool.Exec(ctx, `UPDATE runs SET git_commit=$2 WHERE id=$1`, j.run.ID, res.CodeVersion)
+	}
+	msg := fmt.Sprintf("Sandbox %s attempt %d: %s in %.1fs", j.phase, j.attempt, statusText(res), float64(res.DurationMs)/1000)
 	if len(res.Metrics) > 0 {
-		msg += fmt.Sprintf("; recorded %d metrics from metrics.json", len(res.Metrics))
+		msg += fmt.Sprintf("; recorded %d validated metrics from metrics.json", len(res.Metrics))
 	}
-	s.bus.Emit(ctx, store.Event{RunID: run.ID, Agent: req.Agent, Type: "sandbox_finished", Message: msg,
-		Links: mustJSON(map[string]any{"exec_id": execID, "log": logRel, "exit_code": exitCode, "code_version": codeVersion}),
-		Cost:  mustJSON(map[string]any{"tokens": 0, "sandbox_seconds": math.Round(dur.Seconds()*10) / 10})})
-	return res, nil
+	s.bus.Emit(ctx, store.Event{RunID: j.run.ID, Agent: j.agent, Type: "sandbox_finished", Message: msg,
+		Why: res.Error,
+		Links: mustJSON(map[string]any{"exec_id": res.ExecID, "log": res.LogPath, "exit_code": res.ExitCode, "status": res.Status,
+			"attempt": j.attempt, "code_version": res.CodeVersion, "source": j.source}),
+		Cost: mustJSON(map[string]any{"tokens": 0, "sandbox_seconds": math.Round(float64(res.DurationMs)/100) / 10})})
+	return res
+}
+
+func statusText(r *ExecResult) string {
+	switch r.Status {
+	case "succeeded":
+		return "succeeded"
+	case "timed_out":
+		return "timed out"
+	case "cancelled":
+		return "cancelled"
+	case "error":
+		return "could not run (" + shorten(r.Error, 100) + ")"
+	}
+	return fmt.Sprintf("failed (exit %d)", r.ExitCode)
 }
 
 func sandboxWhy(phase string) string {
@@ -219,118 +683,59 @@ func sandboxWhy(phase string) string {
 	case "test":
 		return "Running tests offline inside a fresh container"
 	}
-	return "Running offline inside a fresh container with CPU, memory and time limits"
+	return "Running offline inside a fresh container with CPU, memory, process and time limits"
 }
 
-func (s *Service) runContainer(ctx context.Context, run *store.Run, execID int64, req ExecRequest, image, project, logPath string, timeout time.Duration) (int, bool, error) {
-	logFile, err := os.Create(logPath)
+// createLog creates a fresh log file and never follows a planted symlink.
+func createLog(project, rel string) (*os.File, error) {
+	p, err := ResolveNoSymlink(project, rel)
 	if err != nil {
-		return -1, false, err
+		return nil, err
 	}
-	defer logFile.Close()
+	_ = os.Remove(p)
+	return os.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+}
 
-	env := map[string]string{
-		"LAB_RUN_ID": fmt.Sprint(run.ID), "LAB_PHASE": req.Phase, "LAB_BUDGET": run.ComputeBudget,
-		// Libraries see all host cores; tell them the container's real CPU limit to avoid oversubscription.
-		"LAB_CPUS": s.cfg.SandboxCPUs, "OMP_NUM_THREADS": s.cfg.SandboxCPUs, "MKL_NUM_THREADS": s.cfg.SandboxCPUs,
-	}
-	for k, v := range req.Env {
-		env[k] = v
-	}
+// capWriter stops writing after max bytes (and says so once).
+type capWriter struct {
+	mu   sync.Mutex
+	w    io.Writer
+	n    int64
+	max  int64
+	said bool
+}
 
-	runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
-	defer cancel()
-
-	var cmd *exec.Cmd
-	name := fmt.Sprintf("lab-run-%d-%d", run.ID, execID)
-	if s.cfg.SandboxMode == "local" {
-		// Development only: no isolation at all.
-		fmt.Fprintf(logFile, "[sandbox] WARNING: SANDBOX_MODE=local, running without isolation\n")
-		cmd = exec.CommandContext(runCtx, shellPath(), "-c", req.Command)
-		cmd.Dir = project
-		cmd.Env = append(os.Environ(), "PYTHONUSERBASE="+filepath.Join(project, ".pydeps"), "PYTHONUNBUFFERED=1")
-		for k, v := range env {
-			cmd.Env = append(cmd.Env, k+"="+v)
+func (c *capWriter) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.n >= c.max {
+		if !c.said {
+			c.said = true
+			_, _ = c.w.Write([]byte("\n[sandbox] output truncated: log limit reached\n"))
 		}
-	} else {
-		hostProject := project
-		hostUploads := filepath.Join(s.cfg.DataDir, "workspaces", fmt.Sprint(run.WorkspaceID), "uploads")
-		if s.cfg.SandboxHostDataDir != "" {
-			rel, _ := filepath.Rel(s.cfg.DataDir, project)
-			hostProject = filepath.Join(s.cfg.SandboxHostDataDir, rel)
-			hostUploads = filepath.Join(s.cfg.SandboxHostDataDir, "workspaces", fmt.Sprint(run.WorkspaceID), "uploads")
-		}
-		_ = os.MkdirAll(filepath.Join(s.cfg.DataDir, "workspaces", fmt.Sprint(run.WorkspaceID), "uploads"), 0o755)
-		network := "none"
-		if req.Phase == "install" {
-			network = "bridge"
-		}
-		args := []string{"run", "--rm", "--name", name,
-			"--cpus", s.cfg.SandboxCPUs, "--memory", s.cfg.SandboxMemory, "--pids-limit", s.cfg.SandboxPids,
-			"--network", network, "--user", "1000:1000", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
-			"-v", hostProject + ":/work", "-v", hostUploads + ":/inputs:ro", "-w", "/work",
-			"-e", "HOME=/tmp", "-e", "PYTHONUSERBASE=/work/.pydeps", "-e", "PIP_CACHE_DIR=/work/.cache/pip",
-			"-e", "PYTHONUNBUFFERED=1", "-e", "MPLCONFIGDIR=/tmp/mpl",
-		}
-		keys := make([]string, 0, len(env))
-		for k := range env {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			args = append(args, "-e", k+"="+env[k])
-		}
-		args = append(args, image, "bash", "-c", req.Command)
-		cmd = exec.CommandContext(runCtx, "docker", args...)
-		cmd.Cancel = func() error {
-			// Kill the container, not just the docker CLI process. Bounded, so a stuck Docker
-			// daemon can never hold a run past its time limit.
-			kctx, kcancel := context.WithTimeout(context.Background(), 15*time.Second)
-			defer kcancel()
-			_ = exec.CommandContext(kctx, "docker", "kill", name).Run()
-			return cmd.Process.Kill()
-		}
+		return len(p), nil
 	}
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
-	cmd.WaitDelay = 10 * time.Second
-
-	err = cmd.Run()
-	timedOut := errors.Is(runCtx.Err(), context.DeadlineExceeded)
-	if timedOut {
-		fmt.Fprintf(logFile, "\n[sandbox] time limit of %s reached; container stopped\n", timeout)
-		return -1, true, nil
+	room := c.max - c.n
+	q := p
+	if int64(len(q)) > room {
+		q = q[:room]
 	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		if exitErr.ExitCode() == 137 {
-			fmt.Fprintf(logFile, "\n[sandbox] Killed: the container was stopped (exit 137), usually because it ran out of memory (limit %s)\n", s.cfg.SandboxMemory)
-		}
-		return exitErr.ExitCode(), false, nil
-	}
+	n, err := c.w.Write(q)
+	c.n += int64(n)
 	if err != nil {
-		return -1, false, err
+		return n, err
 	}
-	return 0, false, nil
+	return len(p), nil
 }
 
-func shellPath() string {
-	if p, err := exec.LookPath("bash"); err == nil {
-		return p
-	}
-	if runtime.GOOS == "windows" {
-		return "cmd"
-	}
-	return "sh"
-}
+// ---------- code version snapshot ----------
 
 // snapshotIgnore lists what is never part of a code version.
-const snapshotIgnore = "data/\nlogs/\n.pydeps/\n.cache/\nresults/\n__pycache__/\n*.pt\n*.pth\n*.ckpt\n.pytest_cache/\n.git/\n"
+const snapshotIgnore = "data/\nlogs/\n.pydeps/\n.cache/\nresults/\nmodels/\n__pycache__/\n*.pt\n*.pth\n*.ckpt\n.pytest_cache/\n.git/\n"
 
 // GitDir is where a run's code-version repository lives: next to the project folder, never
-// inside it. The project folder is mounted read-write into the sandbox, so a repository inside
-// it would let sandboxed code plant hooks or config (core.fsmonitor, hooks/*) that the host's
-// git would then execute (audit SEC-01).
+// inside it. Sandboxed code must never be able to plant hooks or config (core.fsmonitor,
+// hooks/*) that the host's git would then execute (audit SEC-01).
 func GitDir(project string) string { return filepath.Join(filepath.Dir(project), "meta.git") }
 
 // gitArgs are the hardened options for every host-side git call on a sandbox project.
@@ -340,19 +745,25 @@ func gitArgs(gitDir, project string) []string {
 		"-c", "user.name=Lab Sandbox", "-c", "user.email=lab@localhost",
 		"-c", "commit.gpgsign=false", "-c", "core.autocrlf=false", "-c", "safe.directory=*",
 		"-c", "core.hooksPath=" + filepath.ToSlash(filepath.Join(gitDir, "no-hooks")),
-		"-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false",
+		"-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-c", "core.symlinks=true",
 		"-c", "core.excludesFile=" + filepath.ToSlash(filepath.Join(gitDir, "info", "exclude")),
 	}
 }
 
-// codeVersion commits the project (excluding data, logs, deps) into a repository kept outside
-// the sandbox mount and returns the commit hash. Falls back to a content hash if git is unavailable.
+// codeVersion commits the project (excluding data, logs, deps, results) into a repository kept
+// outside the sandbox mount and returns the commit hash. Falls back to a content hash.
 func (s *Service) codeVersion(project string) string {
 	s.gitMu.Lock()
 	defer s.gitMu.Unlock()
 	// The pushed repository gets a .gitignore too; the snapshot itself relies only on info/exclude,
 	// which sandboxed code cannot edit.
-	_ = os.WriteFile(filepath.Join(project, ".gitignore"), []byte(snapshotIgnore), 0o644)
+	if p, err := ResolveNoSymlink(project, ".gitignore"); err == nil {
+		_ = os.Remove(p)
+		if f, err := os.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644); err == nil {
+			_, _ = f.WriteString(snapshotIgnore)
+			f.Close()
+		}
+	}
 
 	gitDir := GitDir(project)
 	git := func(args ...string) (string, error) {
@@ -388,14 +799,14 @@ func contentHash(project string) string {
 		}
 		rel, _ := filepath.Rel(project, p)
 		top := strings.Split(filepath.ToSlash(rel), "/")[0]
-		if d.IsDir() && (top == "data" || top == "logs" || top == ".pydeps" || top == ".cache" || top == ".git" || top == "results") {
+		if d.IsDir() && (top == "data" || top == "logs" || top == ".pydeps" || top == ".cache" || top == ".git" || top == "results" || top == "models") {
 			return filepath.SkipDir
 		}
-		if !d.IsDir() {
+		if d.Type().IsRegular() {
 			f, err := os.Open(p)
 			if err == nil {
 				h.Write([]byte(rel))
-				io.Copy(h, f)
+				_, _ = io.Copy(h, f)
 				f.Close()
 			}
 		}
@@ -417,47 +828,18 @@ func hashAndTail(path string) (string, string) {
 	return "sha256:" + hex.EncodeToString(sum[:]), string(tail)
 }
 
-func appendLog(path, text string) {
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err == nil {
-		f.WriteString(text)
-		f.Close()
-	}
-}
-
-// ingestMetrics reads metrics.json written during THIS execution and stores every number
-// with its proof: run, exec, code version, log file hash and the log line that printed it.
-func (s *Service) ingestMetrics(ctx context.Context, runID, execID int64, path string, since time.Time, logPath, logRel, logHash, codeVersion string) ([]MetricOut, error) {
-	st, err := os.Stat(path)
-	if err != nil {
-		return nil, errors.New("results/metrics.json was not written by the code")
-	}
-	if st.ModTime().Before(since.Add(-2 * time.Second)) {
-		return nil, errors.New("results/metrics.json is older than this execution; ignored")
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var doc any
-	if err := json.Unmarshal(raw, &doc); err != nil {
-		return nil, fmt.Errorf("metrics.json is not valid JSON: %w", err)
-	}
-	flat := map[string]float64{}
-	flatten("", doc, flat)
-	if len(flat) == 0 {
-		return nil, errors.New("metrics.json contains no numbers")
-	}
+// ingestMetrics stores every validated number with its proof: run, exec, code version, log file
+// hash and the log line that printed it.
+func (s *Service) ingestMetrics(ctx context.Context, runID, execID int64, doc *MetricsDoc, logPath, logRel, logHash, codeVersion string) ([]MetricOut, error) {
 	lines := readLines(logPath)
-
-	names := make([]string, 0, len(flat))
-	for k := range flat {
+	names := make([]string, 0, len(doc.Metrics))
+	for k := range doc.Metrics {
 		names = append(names, k)
 	}
 	sort.Strings(names)
 	out := make([]MetricOut, 0, len(names))
 	for _, name := range names {
-		v := flat[name]
+		v := doc.Metrics[name]
 		lineNo, lineText := findLogLine(lines, name, v)
 		var id int64
 		if err := s.store.Pool.QueryRow(ctx, `
@@ -477,7 +859,6 @@ func flatten(prefix string, v any, out map[string]float64) {
 		if !math.IsNaN(t) && !math.IsInf(t, 0) && prefix != "" {
 			out[prefix] = t
 		}
-	case bool:
 	case map[string]any:
 		for k, child := range t {
 			key := k
@@ -500,6 +881,9 @@ func readLines(path string) []string {
 	sc.Buffer(make([]byte, 1<<20), 1<<20)
 	for sc.Scan() {
 		lines = append(lines, sc.Text())
+	}
+	if sc.Err() != nil {
+		return lines
 	}
 	return lines
 }
@@ -552,12 +936,24 @@ func mustJSON(v any) json.RawMessage {
 	return b
 }
 
-// DockerAvailable reports whether the docker daemon answers (for /healthz).
-func DockerAvailable(ctx context.Context) bool {
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	var out bytes.Buffer
-	c := exec.CommandContext(ctx, "docker", "version", "--format", "{{.Server.Version}}")
-	c.Stdout = &out
-	return c.Run() == nil && out.Len() > 0
+// Status reports whether Docker answers and the sandbox image exists (for /healthz and the UI).
+func (s *Service) Status(ctx context.Context) map[string]any {
+	out := map[string]any{"mode": "docker", "image": s.cfg.SandboxImagePython, "available": false, "image_present": false}
+	lim := s.Limits(ctx)
+	out["limits"] = map[string]any{"cpus": lim.CPUs(), "memory_bytes": lim.MemoryBytes, "pids": lim.Pids,
+		"timeout_sec": s.cfg.SandboxTimeoutSec, "max_timeout_sec": s.cfg.SandboxMaxTimeoutSec, "network": "none (install step only)"}
+	if err := s.engine.Runner.Ping(ctx); err != nil {
+		out["error"] = "Docker is not available: " + err.Error()
+		return out
+	}
+	out["available"] = true
+	ok, err := s.engine.Runner.ImagePresent(ctx, s.cfg.SandboxImagePython)
+	out["image_present"] = ok
+	if err != nil {
+		out["error"] = err.Error()
+	} else if !ok {
+		out["error"] = fmt.Sprintf("The sandbox image %s is not built. Run: docker build -t %s infra/sandbox-images/python",
+			s.cfg.SandboxImagePython, s.cfg.SandboxImagePython)
+	}
+	return out
 }

@@ -129,6 +129,29 @@ export const runApi = {
   },
 };
 
+/* ── Code sandbox ── */
+
+export const sandboxApi = {
+  status: async (signal?: AbortSignal) => A.toSandboxHealth(await request(ENDPOINTS.sandboxStatus, { signal })),
+  saveFile: (runId: string, path: string, content: string) =>
+    request<{ path: string; size: number; saved_at: string }>(ENDPOINTS.saveFile, { params: { id: runId }, body: { path, content } }),
+  /** Returns at once (202); the container keeps running on the backend. */
+  start: async (runId: string, entrypoint: string, timeoutSec?: number) =>
+    A.toSandboxExecution(await request(ENDPOINTS.startExecution, { params: { id: runId }, body: { entrypoint, timeout_sec: timeoutSec } })),
+  list: async (runId: string, signal?: AbortSignal) =>
+    unwrapList<unknown>(await request(ENDPOINTS.listExecutions, { params: { id: runId }, signal }), "executions").map(A.toSandboxExecution),
+  get: async (execId: string, signal?: AbortSignal) => A.toSandboxExecution(await request(ENDPOINTS.getExecution, { params: { id: execId }, signal })),
+  logs: async (execId: string, stream: "combined" | "stderr", offset: number, signal?: AbortSignal) =>
+    A.toLogChunk(await request(ENDPOINTS.executionLogs, { params: { id: execId }, query: { stream, offset }, signal })),
+  cancel: (execId: string) => request<unknown>(ENDPOINTS.cancelExecution, { params: { id: execId } }),
+  artifactUrl: (runId: string, path: string) => apiUrl(ENDPOINTS.artifact, { id: runId }, { path }),
+  /** Self-Healing Debugger: queued on the backend; at most 3 attempts, each re-run in a fresh container. */
+  heal: async (runId: string, execId: string) =>
+    A.toHealSession(await request(ENDPOINTS.startHeal, { params: { id: runId }, body: { exec_id: Number(execId) } })),
+  healSessions: async (runId: string, signal?: AbortSignal) =>
+    unwrapList<unknown>(await request(ENDPOINTS.listHeal, { params: { id: runId }, signal }), "sessions").map(A.toHealSession),
+};
+
 /* ── Agents & memory ── */
 
 export const teamApi = {

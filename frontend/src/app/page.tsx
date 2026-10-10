@@ -53,9 +53,6 @@ export default function LandingPage() {
             <h1 className="mt-6 text-[2.6rem] font-normal leading-[1.05] tracking-[-0.02em] sm:text-5xl lg:text-[4.1rem]">
               Give your papers a re-run. Meet your new <Highlighter>AI research team</Highlighter>.
             </h1>
-            <p className="mt-6 max-w-xl text-[17px] leading-relaxed text-ink-soft sm:text-lg">
-              Upload a machine-learning paper. A team of agents reproduces its key result on a laptop CPU, tests it against the paper&apos;s own numbers, explains every difference, and explores your “what if?” questions — then pushes everything to your GitHub.
-            </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Button asChild size="lg" variant="purple"><Link href="/login?return_to=%2Fworkspaces%2Fnew"><GithubLogo size={20} weight="bold" /> Continue with GitHub</Link></Button>
               <Button asChild size="lg" variant="outline"><a href="#how"><Play size={20} weight="bold" /> See how it works</a></Button>

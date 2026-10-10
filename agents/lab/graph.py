@@ -201,7 +201,7 @@ def n_execute(s: State) -> State:
     res, tail = coding.repair_and_run(run_id, s.get("timeout", 600), s.get("env") or {},
                                       s.get("help_instruction", ""))
     if res is None:
-        return {"help_reason": "The code still fails after the repair limit:\n" + tail[-1500:]}
+        return {"help_reason": tail[:4000]}
     coding.confirm_fixes(run_id, True)
     nodes = [node("result:metrics", "result", "metrics.json", "done")]
     bus.emit(run_id, "coding.writer", "results_ready",
@@ -214,7 +214,7 @@ def n_execute(s: State) -> State:
 
 def n_ask_help(s: State) -> State:
     run_id = s["run_id"]
-    _ask(run_id, "help", {"problem": s["help_reason"][-3000:], "actions": ["approve", "edit", "reject"],
+    _ask(run_id, "help", {"problem": s["help_reason"][:4000], "actions": ["approve", "edit", "reject"],
                           "hint": "Edit with an instruction (e.g. 'use torch 2.2'), approve to retry, reject to stop"},
          "The agents need help: " + s["help_reason"].splitlines()[0][:200])
     return {}

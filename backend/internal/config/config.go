@@ -39,13 +39,20 @@ type Config struct {
 	WhisperModel string
 	FastModel    string
 
-	SandboxMode        string // docker | local
+	SandboxMode        string // docker (the only mode: code never runs on the host)
 	SandboxImagePython string
 	SandboxImageR      string
 	SandboxCPUs        string
 	SandboxMemory      string
 	SandboxPids        string
+	SandboxTmpfs       string
 	SandboxHostDataDir string
+	// SandboxTimeoutSec is the default execution time limit; SandboxMaxTimeoutSec caps any request.
+	SandboxTimeoutSec    int
+	SandboxMaxTimeoutSec int
+	// Artifact limits (per file and per execution).
+	SandboxMaxArtifactMB      int64
+	SandboxMaxArtifactTotalMB int64
 
 	N8NWebhookURL      string
 	PushDirectFallback bool
@@ -87,10 +94,16 @@ func Load() (*Config, error) {
 		SandboxMode:        get("SANDBOX_MODE", "docker"),
 		SandboxImagePython: get("SANDBOX_IMAGE_PYTHON", "tapu-sena/sandbox-python:latest"),
 		SandboxImageR:      get("SANDBOX_IMAGE_R", "tapu-sena/sandbox-r:latest"),
-		SandboxCPUs:        get("SANDBOX_CPUS", "4"),
-		SandboxMemory:      get("SANDBOX_MEMORY", "6g"),
+		SandboxCPUs:        get("SANDBOX_CPUS", "2"),
+		SandboxMemory:      get("SANDBOX_MEMORY", "4g"),
 		SandboxPids:        get("SANDBOX_PIDS", "256"),
+		SandboxTmpfs:       get("SANDBOX_TMPFS", "512m"),
 		SandboxHostDataDir: get("SANDBOX_HOST_DATA_DIR", ""),
+
+		SandboxTimeoutSec:         getInt("SANDBOX_TIMEOUT_SEC", 300),
+		SandboxMaxTimeoutSec:      getInt("SANDBOX_MAX_TIMEOUT_SEC", 3*3600),
+		SandboxMaxArtifactMB:      int64(getInt("SANDBOX_MAX_ARTIFACT_MB", 512)),
+		SandboxMaxArtifactTotalMB: int64(getInt("SANDBOX_MAX_ARTIFACTS_TOTAL_MB", 2048)),
 
 		N8NWebhookURL:      get("N8N_WEBHOOK_URL", ""),
 		PushDirectFallback: getBool("PUSH_DIRECT_FALLBACK", true),
@@ -128,14 +141,26 @@ func Load() (*Config, error) {
 	if c.InternalToken == "" {
 		return nil, fmt.Errorf("INTERNAL_TOKEN must be set")
 	}
-	if c.SandboxMode != "docker" && c.SandboxMode != "local" {
-		return nil, fmt.Errorf("SANDBOX_MODE must be docker or local")
+	// Generated code only ever runs inside Docker; the old no-isolation "local" mode was removed.
+	if c.SandboxMode != "docker" {
+		return nil, fmt.Errorf("SANDBOX_MODE must be docker: generated code is never executed on the host")
 	}
-	// local runs AI-written code on this machine with no isolation (audit SEC-02).
-	if c.SandboxMode == "local" && c.Env != "development" {
-		return nil, fmt.Errorf("SANDBOX_MODE=local (no isolation) is only allowed with APP_ENV=development")
+	if c.SandboxTimeoutSec <= 0 || c.SandboxMaxTimeoutSec < c.SandboxTimeoutSec {
+		return nil, fmt.Errorf("SANDBOX_TIMEOUT_SEC must be positive and not above SANDBOX_MAX_TIMEOUT_SEC")
 	}
 	return c, nil
+}
+
+func getInt(key string, def int) int {
+	v, ok := os.LookupEnv(key)
+	if !ok || v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil {
+		return def
+	}
+	return n
 }
 
 // firstKey returns the first of a comma-separated list of API keys.

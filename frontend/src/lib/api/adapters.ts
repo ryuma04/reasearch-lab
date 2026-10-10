@@ -407,7 +407,107 @@ const FILE_KIND = (p: string): T.RunFileKind => {
 export function toFile(raw: unknown): T.RunFile {
   const f = isObj(raw) ? raw : {};
   const path = String(f.path ?? "");
-  return { path, kind: FILE_KIND(path), size_bytes: num(f.size ?? f.size_bytes) };
+  return { path, kind: FILE_KIND(path), size_bytes: num(f.size ?? f.size_bytes), editable: f.editable === true };
+}
+
+const SANDBOX_STATUS = new Set(["queued", "running", "succeeded", "failed", "timed_out", "cancelled", "error"]);
+const METRICS_STATUS = new Set(["valid", "invalid", "missing", "not_collected"]);
+
+export function toSandboxExecution(raw: unknown): T.SandboxExecution {
+  const e = isObj(raw) ? raw : {};
+  const lim = isObj(e.limits) ? e.limits : {};
+  const nano = num(lim.nano_cpus);
+  return {
+    id: id(e.id),
+    run_id: id(e.run_id),
+    phase: String(e.phase ?? ""),
+    status: (SANDBOX_STATUS.has(String(e.status)) ? e.status : "error") as T.SandboxExecStatus,
+    source: e.source === "user" ? "user" : "agent",
+    agent: String(e.agent ?? ""),
+    attempt: num(e.attempt) ?? 1,
+    entrypoint: s(e.entrypoint),
+    command: String(e.command ?? ""),
+    exit_code: num(e.exit_code),
+    timed_out: e.timed_out === true,
+    cancelled: e.cancelled === true,
+    duration_ms: num(e.duration_ms),
+    started_at: s(e.started_at),
+    finished_at: s(e.finished_at),
+    log_hash: s(e.log_hash),
+    code_version: s(e.code_version),
+    error: s(e.error),
+    metrics_status: (METRICS_STATUS.has(String(e.metrics_status)) ? e.metrics_status : "not_collected") as T.SandboxExecution["metrics_status"],
+    metrics_error: s(e.metrics_error),
+    artifacts: arr(e.artifacts).filter(isObj).map((a) => ({
+      path: String(a.path ?? ""),
+      kind: String(a.kind ?? "other"),
+      format: s(a.format),
+      size: num(a.size),
+      verified: typeof a.verified === "boolean" ? a.verified : null,
+      error: s(a.error),
+    })),
+    // Only numbers the backend recorded from the executed program; never filled in here.
+    metrics: arr(e.metrics).filter(isObj).filter((m) => num(m.value) !== null).map((m) => ({
+      id: id(m.id),
+      name: String(m.name ?? ""),
+      value: m.value as number,
+      log_line: num(m.log_line),
+      log_line_text: s(m.log_line_text),
+    })),
+    limits: { cpus: nano === null ? null : nano / 1e9, memory_bytes: num(lim.memory_bytes), pids: num(lim.pids) },
+  };
+}
+
+export function toSandboxHealth(raw: unknown): T.SandboxHealth {
+  const h = isObj(raw) ? raw : {};
+  const lim = isObj(h.limits) ? h.limits : {};
+  return {
+    available: h.available === true,
+    image: String(h.image ?? ""),
+    image_present: h.image_present === true,
+    error: s(h.error),
+    limits: { cpus: num(lim.cpus), memory_bytes: num(lim.memory_bytes), pids: num(lim.pids), timeout_sec: num(lim.timeout_sec), network: s(lim.network) },
+  };
+}
+
+const HEAL_STATUS = new Set(["queued", "running", "fixed", "failed", "error"]);
+const REPAIR_STATUS = new Set(["running", "fixed", "still_failing", "tests_failed", "no_fix", "sandbox_error"]);
+
+export function toHealSession(raw: unknown): T.HealSession {
+  const h = isObj(raw) ? raw : {};
+  return {
+    id: id(h.id),
+    status: (HEAL_STATUS.has(String(h.status)) ? h.status : "error") as T.HealStatus,
+    message: String(h.message ?? ""),
+    max_attempts: num(h.max_attempts) ?? 3,
+    created_at: s(h.created_at),
+    attempts: arr(h.attempts).filter(isObj).map((a) => ({
+      id: id(a.id),
+      attempt: num(a.attempt) ?? 1,
+      error_summary: String(a.error_summary ?? ""),
+      error_text: String(a.error_text ?? ""),
+      fix_source: String(a.fix_source ?? ""),
+      explanation: String(a.explanation ?? ""),
+      diff: String(a.diff ?? ""),
+      files: arr(a.files).map(String),
+      exec_id: a.exec_id == null ? null : id(a.exec_id),
+      tests: isObj(a.tests) ? (a.tests as T.RepairAttempt["tests"]) : {},
+      status: (REPAIR_STATUS.has(String(a.status)) ? a.status : "running") as T.RepairStatus,
+    })),
+  };
+}
+
+export function toLogChunk(raw: unknown): T.LogChunk {
+  const l = isObj(raw) ? raw : {};
+  const offset = num(l.offset) ?? 0;
+  return {
+    content: typeof l.content === "string" ? l.content : "",
+    offset,
+    next_offset: num(l.next_offset) ?? offset,
+    size: num(l.size) ?? 0,
+    complete: l.complete === true,
+    status: SANDBOX_STATUS.has(String(l.status)) ? (l.status as T.SandboxExecStatus) : null,
+  };
 }
 
 export function toTests(raw: unknown, runId: string): T.TestReport {

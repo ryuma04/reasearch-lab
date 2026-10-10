@@ -619,8 +619,9 @@ func (s *Service) projectDir(run *store.Run) string {
 }
 
 type fileEntry struct {
-	Path string `json:"path"`
-	Size int64  `json:"size"`
+	Path     string `json:"path"`
+	Size     int64  `json:"size"`
+	Editable bool   `json:"editable"`
 }
 
 // GET /runs/{id}/files — project files (code, configs, tests, results, logs).
@@ -644,8 +645,12 @@ func (s *Service) Files(w http.ResponseWriter, r *http.Request) error {
 			}
 			return nil
 		}
+		if !d.Type().IsRegular() { // symlinks written by sandboxed code are never listed or served
+			return nil
+		}
 		if info, err := d.Info(); err == nil {
-			out = append(out, fileEntry{Path: rel, Size: info.Size()})
+			_, editErr := sandbox.EditablePath(rel)
+			out = append(out, fileEntry{Path: rel, Size: info.Size(), Editable: editErr == nil})
 		}
 		return nil
 	})
@@ -664,18 +669,23 @@ func (s *Service) File(w http.ResponseWriter, r *http.Request) error {
 	if rel == "" || strings.HasPrefix(rel, ".git") {
 		return httpx.Errorf(http.StatusBadRequest, "path is required")
 	}
-	p, err := workspace.DataPath(s.projectDir(run), rel)
+	if _, err := sandbox.CleanRel(rel); err != nil {
+		return httpx.Errorf(http.StatusBadRequest, err.Error())
+	}
+	p, err := sandbox.ResolveNoSymlink(s.projectDir(run), rel)
 	if err != nil {
 		return httpx.ErrForbidden
 	}
-	info, err := os.Stat(p)
-	if err != nil || info.IsDir() {
+	info, err := os.Lstat(p)
+	if err != nil || !info.Mode().IsRegular() {
 		return store.ErrNotFound
 	}
 	if info.Size() > 2<<20 {
 		return httpx.Errorf(http.StatusRequestEntityTooLarge, "file is larger than 2 MB")
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Cache-Control", "no-store")
 	http.ServeFile(w, r, p)
 	return nil
 }

@@ -82,6 +82,11 @@ func (s *Service) BuildBundle(ctx context.Context, run *store.Run, ws *store.Wor
 			}
 			return nil
 		}
+		if !d.Type().IsRegular() {
+			// Sandboxed code can create symlinks in writable folders; following one could push a host file.
+			b.Skipped = append(b.Skipped, rel+" (not a regular file)")
+			return nil
+		}
 		info, err := d.Info()
 		if err != nil {
 			return nil

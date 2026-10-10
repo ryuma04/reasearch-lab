@@ -170,8 +170,13 @@ def main():
         "train_seconds": secs,
     }
     print(f"train_seconds: {secs}", flush=True)
+    os.makedirs("models", exist_ok=True)
+    torch.save(student.state_dict(), "models/student_distilled.pt")
+    print("saved models/student_distilled.pt", flush=True)
     with open("results/metrics.json", "w") as f:
-        json.dump(metrics, f, indent=2)
+        json.dump({"schema_version": 1, "metrics": metrics,
+                   "artifacts": [{"path": "models/student_distilled.pt", "kind": "model", "format": "torch"}],
+                   "metadata": {"dataset": str(cfg["data"]["dataset"]), "test_examples": n_test}}, f, indent=2)
     print("wrote results/metrics.json", flush=True)
 
 

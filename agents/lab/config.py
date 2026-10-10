@@ -53,7 +53,16 @@ class Settings:
     model_fast: str
     model_gemini: str
 
-    max_repair_attempts: int = 5
+    # Automatic Debugger repairs after the first failed run (each repair re-runs in a new container).
+    max_repair_attempts: int = 3
+
+    # Arina AI (Elevate gateway, OpenAI Chat Completions format): used only by the Self-Healing Debugger.
+    arina_api_key: str = ""
+    arina_base_url: str = "https://elevate1-0.vercel.app/api/ai"
+    arina_model: str = "gpt-5-mini"
+    arina_max_output_tokens: int = 2500
+    arina_reasoning_effort: str = "low"
+    arina_token_budget: int = 800_000
 
 
 def _keys(list_var: str, single_var: str) -> tuple:
@@ -92,7 +101,13 @@ def load() -> Settings:
         model_writer=_get("GROQ_MODEL_WRITER", "openai/gpt-oss-20b"),
         model_fast=_get("GROQ_MODEL_FAST", "openai/gpt-oss-20b"),
         model_gemini=_get("GEMINI_MODELS", _get("GEMINI_MODEL", "gemini-3-flash-preview")).split(",")[0].strip(),
-        max_repair_attempts=int(_get("MAX_REPAIR_ATTEMPTS", "5")),
+        max_repair_attempts=int(_get("MAX_REPAIR_ATTEMPTS", "3")),
+        arina_api_key=_get("ARINA_API_KEY", _get("ELEVATE_TEAM_API_KEY")),
+        arina_base_url=_get("ARINA_BASE_URL", "https://elevate1-0.vercel.app/api/ai").rstrip("/"),
+        arina_model=_get("ARINA_MODEL", "gpt-5-mini"),
+        arina_max_output_tokens=int(_get("ARINA_MAX_OUTPUT_TOKENS", "2500")),
+        arina_reasoning_effort=_get("ARINA_REASONING_EFFORT", "low"),
+        arina_token_budget=int(_get("ARINA_TOKEN_BUDGET", "800000")),
     )
 
 

@@ -619,6 +619,101 @@ export interface RunFile {
   kind: RunFileKind;
   size_bytes: number | null;
   sha?: string | null;
+  /** The researcher may edit it in the code sandbox (src/, configs/, tests/, requirements.txt). */
+  editable?: boolean;
+}
+
+/* ── Code sandbox (Docker execution through the Go backend) ── */
+
+export type SandboxExecStatus = "queued" | "running" | "succeeded" | "failed" | "timed_out" | "cancelled" | "error";
+
+export interface SandboxArtifact {
+  path: string;
+  kind: string;
+  format: string | null;
+  size: number | null;
+  /** Models only: loaded in a fresh container before the run counted as successful. */
+  verified: boolean | null;
+  error: string | null;
+}
+
+/** A number measured by the executed program (results/metrics.json), with its log line. */
+export interface SandboxMetric {
+  id: ID;
+  name: string;
+  value: number;
+  log_line: number | null;
+  log_line_text: string | null;
+}
+
+export interface SandboxExecution {
+  id: ID;
+  run_id: ID;
+  phase: string;
+  status: SandboxExecStatus;
+  source: "agent" | "user";
+  agent: string;
+  attempt: number;
+  entrypoint: string | null;
+  command: string;
+  exit_code: number | null;
+  timed_out: boolean;
+  cancelled: boolean;
+  duration_ms: number | null;
+  started_at: ISODate | null;
+  finished_at: ISODate | null;
+  log_hash: string | null;
+  code_version: string | null;
+  error: string | null;
+  metrics_status: "valid" | "invalid" | "missing" | "not_collected";
+  metrics_error: string | null;
+  artifacts: SandboxArtifact[];
+  metrics: SandboxMetric[];
+  limits: { cpus: number | null; memory_bytes: number | null; pids: number | null };
+}
+
+export interface SandboxHealth {
+  available: boolean;
+  image: string;
+  image_present: boolean;
+  error: string | null;
+  limits: { cpus: number | null; memory_bytes: number | null; pids: number | null; timeout_sec: number | null; network: string | null };
+}
+
+export type HealStatus = "queued" | "running" | "fixed" | "failed" | "error";
+export type RepairStatus = "running" | "fixed" | "still_failing" | "tests_failed" | "no_fix" | "sandbox_error";
+
+export interface RepairAttempt {
+  id: ID;
+  attempt: number;
+  error_summary: string;
+  error_text: string;
+  /** memory | pattern | cache | arina | fallback_ai */
+  fix_source: string;
+  explanation: string;
+  diff: string;
+  files: string[];
+  exec_id: ID | null;
+  tests: { total?: number; passed?: number; failed?: number; skipped?: number; note?: string; error?: string };
+  status: RepairStatus;
+}
+
+export interface HealSession {
+  id: ID;
+  status: HealStatus;
+  message: string;
+  max_attempts: number;
+  attempts: RepairAttempt[];
+  created_at: ISODate | null;
+}
+
+export interface LogChunk {
+  content: string;
+  offset: number;
+  next_offset: number;
+  size: number;
+  complete: boolean;
+  status: SandboxExecStatus | null;
 }
 
 export interface TestCase {
