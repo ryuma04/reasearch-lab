@@ -43,7 +43,7 @@ services:
     profiles: ["full"]
 
   api:
-    build: ./services/api
+    build: ./backend
     env_file: .env
     environment:
       DATABASE_URL: postgres://lab:lab@postgres:5432/lab?sslmode=disable
@@ -64,7 +64,7 @@ services:
     profiles: ["full"]
 
   agents:
-    build: ./services/agents
+    build: ./agents
     env_file: .env
     environment:
       DATABASE_URL: postgres://lab:lab@postgres:5432/lab?sslmode=disable
