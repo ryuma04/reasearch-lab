@@ -84,7 +84,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(memory, "save_fix", lambda *a: s["saved"].append(a))
     monkeypatch.setattr(memory, "mark_used", lambda *a: None)
 
-    def fake_arina(system, user, max_output_tokens=None):
+    def fake_arina(system, user, max_output_tokens=None, **_kw):
         s["arina"].append(user)
         if not s["answers"]:
             return llm.Result(text='{"cause": "no idea", "explanation": "", "edits": []}', tokens=50, provider="arina", model="m")

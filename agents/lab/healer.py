@@ -228,14 +228,12 @@ def ask_ai(root: Path, failure: Failure) -> Diagnosis | None:
         return Diagnosis("cache", cached["cause"], cached["explanation"], cached["ops"])
     user = f"Error output:\n{failure.text[-ERROR_CHARS:]}\n\nCode:\n{context}"
     data, tokens, source = None, 0, "arina"
-    try:
-        res = llm.arina(SYSTEM, user)
+    res = llm.invoke("debugging", SYSTEM, user, max_tokens=2500)
+    if res is not None:
         data, tokens = res.json(), res.tokens
-    except llm.ArinaUnavailable as e:
-        log.warning("Arina not used: %s", e)
-        if llm.available():
-            data, tokens = llm.chat_json("planner", SYSTEM, user, max_tokens=1800)
-            source = "fallback_ai"
+        source = "arina" if res.provider == "arina" else "fallback_ai"  # a fallback only happens with ARINA_FALLBACK_TO_SHARED=true
+    else:
+        log.warning("the debugging model gave no answer: %s", llm.last_error())
     if not isinstance(data, dict):
         return None
     ops = edits_to_ops(root, data)

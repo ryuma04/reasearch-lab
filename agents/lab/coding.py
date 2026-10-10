@@ -167,7 +167,7 @@ def write_code(run_id: int, brief: dict) -> dict:
             t.notes = f"used tested recipe '{recipe.NAME}' from Lab Memory"
             bus.emit(run_id, slug, "progress", f"Recognised '{recipe.TITLE}': starting from a tested recipe in Lab Memory",
                      "A recipe that worked before saves time and avoids known errors")
-        elif llm.available():
+        elif llm.agent_available("coding"):
             files = _llm_write(run_id, brief, slug)
             if not files:
                 raise RuntimeError("the AI code writer returned no files")
@@ -203,7 +203,7 @@ def _llm_write(run_id: int, brief: dict, slug: str) -> dict[str, str]:
     paper = brief["papers"][0]
     settings_ = load_settings(run_id)
     extra = "\n".join(bus.instructions(run_id, "coding"))
-    data, _ = llm.chat_json("planner",
+    data, _ = llm.invoke_json("coding",
         steps.instructions(slug) + "\nYou write complete, runnable Python projects for CPU. Follow this contract exactly:\n"
         + CONTRACT + '\nReturn JSON {"files": {"path": "content"}, "notes": "..."}. Do not include configs/config.yaml '
         "(it is generated from the settings). Use only settings names given. Keep training small enough for a laptop CPU.",
@@ -236,12 +236,12 @@ def review(run_id: int, brief: dict) -> list[str]:
             issues.append("src/train.py is missing")
         elif "metrics.json" not in train.read_text(encoding="utf-8"):
             issues.append("src/train.py does not write results/metrics.json")
-        if llm.available() and train.exists():
-            res = llm.chat("reviewer", steps.instructions(slug) + " You cannot run code or call tools: read the code and "
+        if llm.agent_available("debugging") and train.exists():
+            res = llm.invoke("debugging", steps.instructions(slug) + " You cannot run code or call tools: read the code and "
                            "list concrete mismatches between the code and the paper as plain text (one per line, max 5). "
                            "Reply 'OK' if none.",
                            f"Brief: {json.dumps(brief['papers'][0].get('method'))}\nConfig:\n{cfg_text}\nCode:\n"
-                           + train.read_text(encoding="utf-8")[:12000], max_tokens=600)
+                           + train.read_text(encoding="utf-8")[:12000], max_tokens=1200)
             if res and res.text.strip().upper() != "OK" and "<tool_call>" not in res.text and "<function" not in res.text:
                 issues += [l.strip("-• ").strip() for l in res.text.splitlines()
                            if l.strip() and l.strip().upper() != "OK" and not l.strip().startswith("<")][:5]

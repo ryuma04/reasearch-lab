@@ -56,7 +56,7 @@ def compare(systems: list[dict], by_id: dict[str, dict], warnings: list[str]) ->
            "descriptive": {c: {} for c in DESCRIPTIVE}, "capabilities": [], "underexplored": [], "ai": False}
     if not systems or not llm.available():
         return out
-    data, _ = llm.chat_json("planner", COMPARE_SYSTEM, json.dumps([_short(s) for s in systems], ensure_ascii=False), max_tokens=5000)
+    data, _ = llm.chat_json("planner", COMPARE_SYSTEM, json.dumps([_short(s) for s in systems], ensure_ascii=False), max_tokens=5000, agent="research_b")
     if not isinstance(data, dict):
         warnings.append("The comparison could not be generated (the AI returned nothing usable); cells show 'not reported'.")
         return out
@@ -122,7 +122,7 @@ def find_gaps(papers: list[dict], comparison: dict, by_id: dict[str, dict], warn
         warnings.append("No paper had enough extractable text to identify research gaps.")
         return []
     matrix = [{"capability": c["name"], "status_by_system": {sid: cell["status"] for sid, cell in c["cells"].items()}} for c in comparison.get("capabilities", [])]
-    data, _ = llm.chat_json("planner", GAP_SYSTEM, json.dumps({"papers": usable[:14], "capability_matrix": matrix}, ensure_ascii=False), max_tokens=4500)
+    data, _ = llm.chat_json("planner", GAP_SYSTEM, json.dumps({"papers": usable[:14], "capability_matrix": matrix}, ensure_ascii=False), max_tokens=4500, agent="research_b")
     rows = data.get("gaps") if isinstance(data, dict) else None
     if not isinstance(rows, list):
         warnings.append("Research gaps could not be generated (the AI returned nothing usable).")
@@ -169,7 +169,7 @@ def recommend(gaps: list[dict], warnings: list[str]) -> list[dict]:
     if not gaps or not llm.available():
         return []
     slim = [{"id": g["id"], "title": g["title"], "explanation": g["explanation"], "kind": g["kind"], "confidence": g["confidence"], "impact": g["impact"]} for g in gaps]
-    data, _ = llm.chat_json("planner", REC_SYSTEM, json.dumps(slim, ensure_ascii=False), max_tokens=4500)
+    data, _ = llm.chat_json("planner", REC_SYSTEM, json.dumps(slim, ensure_ascii=False), max_tokens=4500, agent="research_b")
     rows = data.get("recommendations") if isinstance(data, dict) else None
     if not isinstance(rows, list):
         warnings.append("Recommendations could not be generated (the AI returned nothing usable).")

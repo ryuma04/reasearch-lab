@@ -235,7 +235,7 @@ def extract(run_id: int, doc: PaperDoc, note: str) -> dict:
         info = {"title": recipe.TITLE, "summary": recipe.SUMMARY, "method": recipe.METHOD, "missing_details": recipe.MISSING,
                 "field": recipe.FIELD, "recipe": recipe.NAME, "claims": [], "settings": []}
         claims_src = recipe.CLAIMS
-    elif llm.available():
+    elif llm.agent_available("research_a"):
         info, claims_src = _extract_llm(doc, note)
     else:
         info, claims_src = _extract_heuristic(doc)
@@ -281,7 +281,7 @@ def _slug(s: str) -> str:
 
 
 def _extract_llm(doc: PaperDoc, note: str) -> tuple[dict, list[dict]]:
-    text = doc.best_text(120_000 if cfg.gemini_api_key else 24_000)
+    text = doc.best_text(24_000)  # Groq's context and per-minute token limit, not Gemini's
     data, _ = llm.chat_json("long",
         "You are the Paper Reader of an ML reproduction lab. Extract from the paper exactly what it states; never invent "
         "numbers. Return JSON with keys: title, summary (plain words, <=120 words), method (list of steps), field, "
@@ -290,7 +290,7 @@ def _extract_llm(doc: PaperDoc, note: str) -> tuple[dict, list[dict]]:
         "unit, higher_is_better (bool), page, table_ref, condition, quote (exact text containing the number)}) for every "
         "main result the paper reports that could be reproduced on a CPU, missing_details (settings needed to "
         "reproduce that the paper does not state), datasets (list of names).",
-        f"Researcher note: {note}\n\nPaper:\n{text}", max_tokens=6000)
+        f"Researcher note: {note}\n\nPaper:\n{text}", max_tokens=6000, agent="research_a")
     if not isinstance(data, dict):
         return _extract_heuristic(doc)
     claims = data.get("claims") or []

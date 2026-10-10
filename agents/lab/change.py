@@ -95,7 +95,7 @@ def fallback_analysis(text: str, files: list[str]) -> dict:
 
 def analyze(text: str, ctx: dict) -> dict:
     files = ctx["files"]
-    data, _ = llm.chat_json("planner", ANALYZER_SYSTEM, json.dumps(ctx, default=str)[:30_000] + "\n\nChange request: " + text, max_tokens=3000)
+    data, _ = llm.chat_json("planner", ANALYZER_SYSTEM, json.dumps(ctx, default=str)[:30_000] + "\n\nChange request: " + text, max_tokens=3000, agent="change_analyzer")
     if isinstance(data, dict) and data.get("intent"):
         data["affected_modules"] = [m for m in data.get("affected_modules", []) if m in files] or files
         data.setdefault("research", {})
@@ -226,16 +226,9 @@ def apply_changes(run_id: int) -> list[str]:
     plan = [{"id": t.get("id"), "title": t.get("title"), "description": t.get("description")} for t in _plan_tasks(run_id)]
     user = json.dumps({"change_request": ch["request_text"], "analysis": ch.get("analysis"), "approved_plan": plan, "files": before}, default=str)
     bus.emit(run_id, "coding.writer", "agent_started", "Applying your change to this version's code", "Only this version's own copy is edited")
-    data = None
-    try:
-        res = llm.arina(EDIT_SYSTEM, user)
-        data = res.json()
-    except llm.ArinaUnavailable as e:
-        log.info("Arina not used for the change: %s", e)
-    if not isinstance(data, dict) and llm.available():
-        data, _ = llm.chat_json("planner", EDIT_SYSTEM, user, max_tokens=8000)
+    data, _ = llm.invoke_json("coding", EDIT_SYSTEM, user, max_tokens=8000)
     if not isinstance(data, dict):
-        raise ChangeFailed("No AI model produced a change (none is configured or none answered), so no code was changed. Check the provider keys and retry.")
+        raise ChangeFailed("The coding model (Arina) produced no change: " + (llm.last_error() or "it is not configured") + ". No code was changed. Check the provider settings and retry.")
     edits, refused = validate_edits(root, data.get("edits"))
     changed = [p for p, c in edits.items() if before.get(p) != c]
     if not changed:

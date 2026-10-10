@@ -88,6 +88,10 @@ def test_a_valid_ai_change_is_written_only_to_the_new_version(world, monkeypatch
     new = TRAIN.replace("0.9", "0.95")
 
     class R:
+        tokens = 1
+        provider = "arina"
+        model = "m"
+
         def json(self):
             return {"summary": "raise acc", "edits": [{"path": "src/train.py", "content": new}]}
     monkeypatch.setattr(change.llm, "arina", lambda *a, **k: R())

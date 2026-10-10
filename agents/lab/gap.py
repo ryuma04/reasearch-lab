@@ -124,9 +124,9 @@ def explain(run_id: int, claim: dict, base: dict | None, experiments: list[dict]
     if untested:
         parts.append("Not tested within this budget: " + ", ".join(d["label"] for d in untested[:3]) + ".")
     text = " ".join(parts)
-    if llm.available():
+    if llm.agent_available("final_synthesis"):
         res = llm.chat("writer", "Rewrite this result explanation in plain, friendly words for a researcher. Keep every "
-                       "number exactly as given and do not add new numbers. Max 90 words.", text, max_tokens=300)
+                       "number exactly as given and do not add new numbers. Max 90 words.", text, max_tokens=300, agent="final_synthesis")
         if res and res.text:
             checked = api.proof_check(run_id, res.text.strip())
             if checked.get("clean_text") and not checked.get("flagged"):

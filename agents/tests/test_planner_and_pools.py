@@ -106,10 +106,11 @@ def test_each_agent_only_sees_its_own_pair_of_keys(monkeypatch):
     assert llm.pool_keys("unknown_agent") is None
 
 
-def test_an_unconfigured_pool_falls_back_to_the_shared_keys(monkeypatch):
-    for k in ("GEMINI_PLANNING_A_KEY_1", "GEMINI_PLANNING_A_KEY_2"):
+def test_an_unconfigured_pool_uses_only_the_shared_keys_of_the_same_provider(monkeypatch):
+    for k in ("GEMINI_PLANNING_A_KEY_1", "GEMINI_PLANNING_A_KEY_2", "GEMINI_PLANNER_A_KEY_1", "GEMINI_PLANNER_A_KEY_2"):
         monkeypatch.delenv(k, raising=False)
-    assert llm._agent_chain("planning_a", "planner") is None
+    chain = llm._agent_chain("planning_a", "planner")
+    assert chain and {p for p, _, _, _ in chain} == {"gemini"}  # never Groq, even though Groq keys exist
 
 
 def _pool_env(monkeypatch):

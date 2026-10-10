@@ -50,7 +50,7 @@ def extract_all(papers: list[dict], warnings: list[str], progress=None) -> None:
         if progress:
             progress(f"Reading abstracts {i + 1}-{i + len(chunk)} of {len(todo)}")
         payload = [{"id": p["id"], "title": p["title"], "abstract": (p.get("abstract") or "")[:2500]} for p in chunk]
-        data, _ = llm.chat_json("fast", SYSTEM, json.dumps(payload, ensure_ascii=False), max_tokens=3500)
+        data, _ = llm.chat_json("fast", SYSTEM, json.dumps(payload, ensure_ascii=False), max_tokens=3500, agent="research_b")
         rows = data.get("papers") if isinstance(data, dict) else None
         if not isinstance(rows, list):
             warnings.append(f"The AI could not read {len(chunk)} abstracts in one batch; those papers show metadata only.")

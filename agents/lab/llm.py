@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import re
+import threading
 import time
 from dataclasses import dataclass
 
@@ -24,31 +25,107 @@ log = logging.getLogger("lab.llm")
 # Tokens used by the agent task currently running in this thread/context (for the reward loop).
 current_tokens: contextvars.ContextVar[list[int] | None] = contextvars.ContextVar("current_tokens", default=None)
 
-_http = httpx.Client(timeout=httpx.Timeout(20.0, read=180.0))
+_http = httpx.Client(timeout=httpx.Timeout(20.0, read=float(settings.ai_timeout)))
 
 
-# Per-agent key pools (spec: two keys per agent, never shared across agents). Variable names: <PREFIX>_1, <PREFIX>_2.
-# An agent whose pool is not configured falls back to the shared GROQ_API_KEYS / GEMINI_API_KEYS lists.
-AGENT_POOLS: dict[str, tuple[str, str]] = {
-    "research_a": ("groq", "GROQ_RESEARCH_A_KEY"),
-    "research_b": ("groq", "GROQ_RESEARCH_B_KEY"),
-    "planning_a": ("gemini", "GEMINI_PLANNING_A_KEY"),
-    "planning_b": ("gemini", "GEMINI_PLANNING_B_KEY"),
+# ---------- Agent -> provider registry (the single place that says who talks to whom) ----------
+
+@dataclass(frozen=True)
+class Route:
+    provider: str                       # groq | gemini | arina
+    role: str                           # which model of the provider (planner | reviewer | writer | fast | long)
+    pool: str | None = None             # env prefix of the agent's own keys: <pool>_1, <pool>_2 (or <pool> alone)
+    aliases: tuple[str, ...] = ()       # other accepted prefixes for the same pool
+    model_env: str | None = None        # optional env var overriding the model for this agent (Arina)
+    purpose: str = ""
+
+
+AGENTS: dict[str, Route] = {
+    "research_a": Route("groq", "long", "GROQ_RESEARCH_A_KEY", purpose="Paper Reader: claims, settings and summary from the paper"),
+    "research_b": Route("groq", "planner", "GROQ_RESEARCH_B_KEY", purpose="Research Gap Explorer: related-paper extraction, comparison, gaps, recommendations"),
+    "planning_a": Route("gemini", "planner", "GEMINI_PLANNING_A_KEY", ("GEMINI_PLANNER_A_KEY",), purpose="Initial Implementation Planner"),
+    "planning_b": Route("gemini", "planner", "GEMINI_PLANNING_B_KEY", ("GEMINI_PLANNER_B_KEY",), purpose="Implementation Plan Optimizer"),
+    "change_analyzer": Route("gemini", "planner", purpose="Change-request analysis (shares the shared Gemini keys)"),
+    "coding": Route("arina", "planner", model_env="ARINA_MODEL_CODING", purpose="Code Writer and version change edits"),
+    "debugging": Route("arina", "planner", model_env="ARINA_MODEL_DEBUGGING", purpose="Code Reviewer and Debugger"),
+    "testing": Route("groq", "planner", "GROQ_TESTING_API_KEY", purpose="Test design"),
+    "final_synthesis": Route("groq", "writer", "GROQ_FINAL_SYNTHESIS_API_KEY", purpose="Plain-language explanation of measured results"),
 }
+# Calls without an agent (small decisions such as intent classification) use the shared chain (Groq, then Gemini, then OpenRouter).
+
 AUTH_COOLDOWN = 3600.0  # a key the provider rejected is not retried for an hour (and an operator warning is logged)
+KEY_PATTERN = re.compile(r"(gsk_|AIza|AQ\.|elev_|hf_|sk-)[A-Za-z0-9_\-.]{8,}")
 
 # Safe metadata of every model call in this context: agent, provider, model, attempt, status, latency, error category.
 # It never holds keys, prompts or responses.
 invocations: contextvars.ContextVar[list[dict] | None] = contextvars.ContextVar("llm_invocations", default=None)
+last_outcome: contextvars.ContextVar[dict] = contextvars.ContextVar("llm_last_outcome", default={})
+_slots: dict[str, threading.BoundedSemaphore] = {}
+_slots_lock = threading.Lock()
+
+
+def _known_keys() -> list[str]:
+    ks = [k for k in (*settings.groq_api_keys, *settings.gemini_api_keys, settings.arina_api_key, settings.openrouter_api_key, settings.hf_token) if k]
+    for r in AGENTS.values():
+        ks += _dedicated(r)
+    return sorted({k for k in ks if len(k) >= 8}, key=len, reverse=True)
+
+
+def redact(text: object) -> str:
+    """Remove every configured key and anything shaped like a provider key from a string before it is logged or stored."""
+    s = str(text)
+    for k in _known_keys():
+        s = s.replace(k, "[redacted]")
+    return KEY_PATTERN.sub("[redacted]", s)
+
+
+def _dedicated(route: Route) -> list[str]:
+    names: list[str] = []
+    for p in ((route.pool,) if route.pool else ()) + route.aliases:
+        names += [f"{p}_1", f"{p}_2", p]
+    seen: set[str] = set()
+    out: list[str] = []
+    for n in names:
+        v = os.environ.get(n, "").strip()
+        if v and v not in seen:
+            seen.add(v)
+            out.append(v)
+    return out
+
+
+def keys_for(agent: str) -> tuple[str, list[str], str]:
+    """(provider, keys, source): the agent's own keys when it has any, else the shared keys of the SAME provider."""
+    route = AGENTS[agent]
+    own = _dedicated(route)
+    if own:
+        return route.provider, own, "dedicated"
+    shared = {"groq": list(settings.groq_api_keys), "gemini": list(settings.gemini_api_keys),
+              "arina": [settings.arina_api_key] if settings.arina_api_key else []}[route.provider]
+    return route.provider, shared, "shared" if shared else "none"
+
+
+def model_for(agent: str) -> str:
+    route = AGENTS[agent]
+    if route.provider == "arina":
+        return (os.environ.get(route.model_env or "", "") or settings.arina_model).strip()
+    if route.provider == "gemini":
+        return settings.gemini_models[0] if settings.gemini_models else ""
+    return settings.model_planner if route.role == "long" else ROLE_MODELS.get(route.role, ROLE_MODELS["writer"])()
 
 
 def pool_keys(agent: str | None) -> tuple[str, list[str]] | None:
-    """(provider, keys) of the agent's own pool, or None when the agent has no configured pool."""
-    spec = AGENT_POOLS.get(agent or "")
-    if not spec:
+    """(provider, keys) of the agent's own dedicated pool, or None when it has none."""
+    if not agent or agent not in AGENTS:
         return None
-    keys = [v.strip() for v in (os.environ.get(f"{spec[1]}_1", ""), os.environ.get(f"{spec[1]}_2", "")) if v.strip()]
-    return (spec[0], keys) if keys else None
+    own = _dedicated(AGENTS[agent])
+    return (AGENTS[agent].provider, own) if own else None
+
+
+def _slot(label: str) -> threading.BoundedSemaphore:
+    with _slots_lock:
+        if label not in _slots:
+            _slots[label] = threading.BoundedSemaphore(max(1, settings.ai_per_key_concurrency))
+        return _slots[label]
 
 
 def _record(agent, provider, model, attempt, ok, started, category="") -> None:
@@ -75,6 +152,16 @@ def available() -> bool:
     return bool(settings.groq_api_key or settings.gemini_api_key or settings.openrouter_api_key)
 
 
+def agent_available(agent: str) -> bool:
+    """True when the agent's assigned provider has credentials (and, for Arina, a usable URL). No network call."""
+    if agent not in AGENTS:
+        return False
+    provider, keys, _ = keys_for(agent)
+    if not keys:
+        return False
+    return provider != "arina" or bool(re.match(r"^https?://[^\s/]+", settings.arina_base_url or ""))
+
+
 def providers() -> dict:
     return {"groq_keys": len(settings.groq_api_keys), "gemini_keys": len(settings.gemini_api_keys),
             "gemini_models": list(settings.gemini_models), "openrouter": bool(settings.openrouter_api_key)}
@@ -88,21 +175,19 @@ ROLE_MODELS = {
 }
 
 
-def _agent_chain(agent: str, role: str) -> list[tuple[str, str, str, str]] | None:
-    """Only the agent's own two keys (no spill into another agent's pool)."""
-    pool = pool_keys(agent)
-    if pool is None:
-        return None
-    provider, keys = pool
+def _agent_chain(agent: str, role: str) -> list[tuple[str, str, str, str]]:
+    """Only the agent's assigned provider and keys. It never contains another provider or another agent's dedicated keys."""
+    provider, keys, _ = keys_for(agent)
     if provider == "gemini":
         return [("gemini", m, k, f"{agent}:{i + 1}") for m in settings.gemini_models for i, k in enumerate(keys)]
-    model = settings.model_planner if role == "long" else ROLE_MODELS.get(role, ROLE_MODELS["writer"])()
-    return [("groq", model, k, f"{agent}:{i + 1}") for i, k in enumerate(keys)]
+    if provider == "groq":
+        model = settings.model_planner if role == "long" else ROLE_MODELS.get(role, ROLE_MODELS["writer"])()
+        return [("groq", model, k, f"{agent}:{i + 1}") for i, k in enumerate(keys)]
+    return []
 
 
 def _chain(role: str) -> list[tuple[str, str, str, str]]:
-    """(provider, model, api key, rate-limit label) in order of preference. Every key of a provider
-    is tried before moving to the next provider, so one exhausted key never stops the lab."""
+    """Shared chain for calls with no agent: (provider, model, api key, rate-limit label) in order of preference."""
     groq_model = settings.model_planner if role == "long" else ROLE_MODELS.get(role, ROLE_MODELS["writer"])()
     groq = [("groq", groq_model, k, f"groq{i}") for i, k in enumerate(settings.groq_api_keys)]
     gemini = [("gemini", m, k, f"gemini{i}") for m in settings.gemini_models for i, k in enumerate(settings.gemini_api_keys)]
@@ -114,60 +199,92 @@ def _chain(role: str) -> list[tuple[str, str, str, str]]:
 
 def chat(role: str, system: str, user: str, *, json_mode: bool = False, max_tokens: int = 2048,
          temperature: float = 0.2, agent: str | None = None) -> Result | None:
-    """Call the best available model for the role, switching API key / provider when one hits its limit.
-    If every key is only briefly rate-limited (per-minute limits), waits for the first one to free up."""
-    for attempt in range(3):
+    """A Groq / Gemini call. With an agent it uses only that agent's provider and keys (rotating inside the pool);
+    without one it uses the shared chain. Retries are bounded (AI_MAX_RETRIES): a rate limit waits for the first key
+    to free up (up to 45 s), a transient failure backs off, and anything a retry cannot fix stops immediately."""
+    if agent is not None and agent not in AGENTS:
+        raise ValueError(f"unknown agent '{agent}'")
+    if agent is not None and AGENTS[agent].provider == "arina":
+        return invoke(agent, system, user, json_mode=json_mode, max_tokens=max_tokens, temperature=temperature)
+    for attempt in range(max(1, settings.ai_max_retries)):
         res = _try_chain(role, system, user, json_mode, max_tokens, temperature, agent)
         if res is not None:
             return res
-        waits = [t - time.time() for t in _cooldown.values() if t > time.time()]
-        if not waits or min(waits) > 45:
+        out = last_outcome.get()
+        if out.get("kind") == "rate_limited":
+            wait = out.get("wait", 0)
+            if not wait or wait > 45:
+                return None
+            log.info("every key of '%s' is briefly rate limited; waiting %.0fs", agent or "shared", wait)
+            time.sleep(wait + 0.5)
+        elif out.get("kind") == "transient":
+            time.sleep(settings.ai_backoff * (2 ** attempt))
+        else:  # auth, invalid_request, no_keys, error: retrying cannot help
             return None
-        log.info("all keys are briefly rate limited; waiting %.0fs for the first to free up", min(waits))
-        time.sleep(min(waits) + 0.5)
     return None
 
 
 def _try_chain(role, system, user, json_mode, max_tokens, temperature, agent=None) -> Result | None:
-    pooled = _agent_chain(agent, role) if agent else None
+    chain = _agent_chain(agent, role) if agent else _chain(role)
+    kinds: set[str] = set()
+    waits: list[float] = []
     attempt = 0
-    for provider, model, key, label in (pooled if pooled is not None else _chain(role)):
-        if _cooldown.get(label, 0) > time.time():
+    if not chain:
+        last_outcome.set({"kind": "no_keys"})
+        _record(agent, AGENTS[agent].provider if agent else "none", "-", 0, False, time.time(), "not_configured")
+        return None
+    for provider, model, key, label in chain:
+        remaining = _cooldown.get(label, 0) - time.time()
+        if remaining > 0:
+            kinds.add("rate_limited")
+            waits.append(remaining)
             continue
         dec = api.rate_acquire(label, model)
         if not dec.get("allowed", True):
-            log.info("rate limit for %s:%s, switching key/provider", label, model)
+            log.info("rate limit for %s:%s, switching key", label, model)
+            kinds.add("rate_limited")
+            waits.append(float(dec.get("retry_after") or 5))
             continue
         attempt += 1
         started = time.time()
         try:
-            if provider == "gemini":
-                res = _gemini(model, key, system, user, json_mode, max_tokens, temperature)
-            else:
-                res = _openai_compatible(provider, model, key, system, user, json_mode, max_tokens, temperature)
+            with _slot(label):  # at most AI_MAX_CONCURRENCY_PER_KEY requests in flight on one key
+                if provider == "gemini":
+                    res = _gemini(model, key, system, user, json_mode, max_tokens, temperature)
+                else:
+                    res = _openai_compatible(provider, model, key, system, user, json_mode, max_tokens, temperature)
         except RateLimited as e:
             _cooldown[label] = time.time() + e.retry_after
+            waits.append(e.retry_after)
+            kinds.add("rate_limited")
             log.warning("%s:%s rate limited by the provider for %.0fs", label, model, e.retry_after)
             _record(agent, provider, model, attempt, False, started, "rate_limited")
             continue
         except Exception as e:  # noqa: BLE001 - classify, then try the next key only when that can help
             code = _http_status(e)
+            msg = redact(e)[:200]
             if code in (401, 403):
                 _cooldown[label] = time.time() + AUTH_COOLDOWN
                 log.error("OPERATOR WARNING: the %s key '%s' was rejected by the provider (HTTP %s); it is paused for 1 hour", provider, label, code)
+                kinds.add("auth")
                 _record(agent, provider, model, attempt, False, started, "auth")
                 continue
-            log.warning("%s:%s failed: %s", label, model, str(e)[:200])
-            if code in (400, 404, 422) and pooled is not None:  # a bad request will fail on the other key too
+            log.warning("%s:%s failed: %s", label, model, msg)
+            if code in (400, 404, 422):  # a bad request fails identically on the other key: stop, do not rotate
+                last_outcome.set({"kind": "invalid_request", "message": msg})
                 _record(agent, provider, model, attempt, False, started, "invalid_request")
                 return None
+            kinds.add("transient" if (code is None or code >= 500) else "error")
             _record(agent, provider, model, attempt, False, started, "transient" if (code is None or code >= 500) else "error")
             continue
         _record(agent, provider, model, attempt, True, started)
+        last_outcome.set({"kind": "ok"})
         acc = current_tokens.get()
         if acc is not None:
             acc[0] += res.tokens
         return res
+    kind = "transient" if "transient" in kinds else "rate_limited" if "rate_limited" in kinds else "auth" if "auth" in kinds else "error"
+    last_outcome.set({"kind": kind, "wait": min(waits) if waits else 0})
     return None
 
 
@@ -184,6 +301,147 @@ def chat_json(role: str, system: str, user: str, *, max_tokens: int = 4096, agen
     if data is None:
         log.warning("%s:%s returned invalid JSON (%d chars)", res.provider, res.model, len(res.text))
     return data, res.tokens
+
+
+def invoke(agent: str, system: str, user: str, *, json_mode: bool = False, max_tokens: int = 2048, temperature: float = 0.2) -> Result | None:
+    """The one entry point for an assigned agent. Groq and Gemini agents rotate inside their pool; Arina agents call the
+    Arina gateway. On failure it returns None (the reason is in last_error()) and never claims success. Another provider
+    answers only for an Arina agent and only when ARINA_FALLBACK_TO_SHARED=true, and then Result.provider says so."""
+    route = AGENTS.get(agent)
+    if route is None:
+        raise ValueError(f"unknown agent '{agent}'")
+    if route.provider != "arina":
+        return chat(route.role, system, user, json_mode=json_mode, max_tokens=max_tokens, temperature=temperature, agent=agent)
+    model = model_for(agent)
+    started = time.time()
+    try:
+        res = arina(system, user, max_output_tokens=max_tokens, model=model, cap=settings.arina_max_output_tokens_code)
+        _record(agent, "arina", model, 1, True, started)
+        last_outcome.set({"kind": "ok"})
+        return res
+    except ArinaUnavailable as e:
+        msg = redact(e)
+        cat = ("not_configured" if "not set" in msg or "not a valid" in msg else "budget" if "budget" in msg else "too_large" if "48 KB" in msg
+               else "rate_limited" if "rate limited" in msg else "invalid_request" if "HTTP 400" in msg else "provider_error")
+        _record(agent, "arina", model, 1, False, started, cat)
+        last_outcome.set({"kind": cat, "message": msg})
+        log.warning("Arina failed for '%s': %s", agent, msg[:200])
+        if not settings.arina_fallback_shared:
+            return None
+    log.warning("ARINA_FALLBACK_TO_SHARED is on: '%s' is answered by the shared chain instead of Arina", agent)
+    fb = chat(route.role, system, user, json_mode=json_mode, max_tokens=max_tokens, temperature=temperature)
+    _record(agent, fb.provider if fb else "none", fb.model if fb else "-", 2, fb is not None, started, "" if fb else "fallback_failed")
+    return fb
+
+
+def last_error() -> str:
+    return last_outcome.get().get("message") or last_outcome.get().get("kind", "")
+
+
+def invoke_json(agent: str, system: str, user: str, *, max_tokens: int = 4096) -> tuple[dict | list | None, int]:
+    res = invoke(agent, system + "\nRespond with valid JSON only.", user, json_mode=True, max_tokens=max_tokens)
+    if res is None:
+        return None, 0
+    data = res.json()
+    if data is None:
+        log.warning("%s:%s returned invalid JSON (%d chars)", res.provider, res.model, len(res.text))
+    return data, res.tokens
+
+
+# ---------- configuration check and connection health ----------
+
+def config_issues() -> list[str]:
+    """Problems found without any network call. Never contains a key."""
+    issues: list[str] = []
+    url = settings.arina_base_url
+    if not re.match(r"^https?://[^\s/]+", url or ""):
+        issues.append("ARINA_BASE_URL is not a valid http(s) URL")
+    if settings.ai_max_retries < 1:
+        issues.append("AI_MAX_RETRIES must be at least 1")
+    seen: dict[str, str] = {}
+    for name, r in AGENTS.items():
+        if r.pool and (r.provider != "arina"):
+            for k in _dedicated(r):
+                if k in seen and seen[k] != name:
+                    issues.append(f"the same {r.provider} key is configured for both '{seen[k]}' and '{name}' (they share one quota)")
+                seen.setdefault(k, name)
+    return issues
+
+
+_health_cache: dict[tuple[str, str], tuple[float, dict]] = {}
+HEALTH_TTL = 300.0
+
+
+def _probe(provider: str, key: str, model: str, level: str) -> dict:
+    """One key, one provider: 'auth' uses the free models listing, 'request' sends a tiny completion."""
+    started = time.time()
+    try:
+        if level == "auth":
+            if provider == "groq":
+                r = _http.get("https://api.groq.com/openai/v1/models", headers={"Authorization": f"Bearer {key}"}, timeout=15)
+            else:
+                r = _http.get("https://generativelanguage.googleapis.com/v1beta/models", headers={"x-goog-api-key": key}, timeout=15)
+            _check(r)
+            status = "authentication_verified"
+        else:
+            if provider == "gemini":
+                _gemini(model, key, "Reply with OK.", "ping", False, 64, 0.0)
+            else:
+                _openai_compatible("groq", model, key, "Reply with OK.", "ping", False, 16, 0.0)
+            status = "request_verified"
+        return {"status": status, "latency_ms": int((time.time() - started) * 1000), "error_category": ""}
+    except RateLimited:
+        return {"status": "rate_limited", "latency_ms": None, "error_category": "rate_limited"}
+    except Exception as e:  # noqa: BLE001
+        code = _http_status(e)
+        return {"status": "authentication_failed" if code in (401, 403) else "invalid_request" if code in (400, 404, 422) else "provider_unavailable",
+                "latency_ms": None, "error_category": f"http_{code}" if code else type(e).__name__}
+
+
+def health(level: str = "none") -> dict:
+    """Per-agent routing and connection status. level: none (configuration only), auth (free authenticated listing per key),
+    request (a tiny completion per key; Arina costs a few tokens of the team budget). Live results are cached for 5 minutes."""
+    if level not in ("none", "auth", "request"):
+        raise ValueError("level must be none, auth or request")
+    agents = []
+    for name, route in AGENTS.items():
+        provider, keys, source = keys_for(name)
+        entry = {"agent": name, "provider": provider, "model": model_for(name), "purpose": route.purpose, "keys_configured": len(keys), "key_source": source,
+                 "status": "configured" if keys else "invalid_configuration", "detail": "" if keys else "no credentials configured for this agent's provider",
+                 "live_tested": False, "latency_ms": None, "error_category": "", "keys": []}
+        if provider == "arina" and not re.match(r"^https?://[^\s/]+", settings.arina_base_url or ""):
+            entry.update(status="invalid_configuration", detail="ARINA_BASE_URL is not a valid http(s) URL")
+        elif keys and level != "none":
+            ck = (name, level)
+            cached = _health_cache.get(ck)
+            if cached and time.time() - cached[0] < HEALTH_TTL:
+                entry.update(cached[1])
+            else:
+                results = []
+                if provider == "arina":
+                    if level == "auth":
+                        entry.update(detail="Arina has no authenticated no-cost endpoint; use level=request for a live check")
+                    else:
+                        t = time.time()
+                        r = None
+                        try:
+                            r = arina("Reply with OK.", "ping", max_output_tokens=600, model=model_for(name))
+                        except ArinaUnavailable as e:
+                            results.append({"label": f"{name}:1", "status": "provider_unavailable", "latency_ms": None, "error_category": redact(e)[:80]})
+                        if r:
+                            results.append({"label": f"{name}:1", "status": "request_verified", "latency_ms": int((time.time() - t) * 1000), "error_category": ""})
+                else:
+                    model = settings.gemini_models[0] if provider == "gemini" else model_for(name)
+                    for i, k in enumerate(keys, 1):
+                        results.append({"label": f"{name}:{i}", **_probe(provider, k, model, level)})
+                if results:
+                    ok = [r for r in results if r["status"] in ("authentication_verified", "request_verified")]
+                    best = ok[0] if ok else results[0]
+                    upd = {"status": best["status"], "live_tested": True, "latency_ms": best["latency_ms"], "error_category": best["error_category"], "keys": results}
+                    entry.update(upd)
+                    _health_cache[ck] = (time.time(), upd)
+        agents.append(entry)
+    return {"level": level, "agents": agents, "issues": config_issues(), "checked_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
 
 
 class RateLimited(Exception):
@@ -203,7 +461,7 @@ def _check(resp: httpx.Response) -> None:
             ra = 30.0
         raise RateLimited(min(max(ra, 5.0), 3600.0))
     if resp.status_code >= 400:
-        raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:300]}")
+        raise RuntimeError(f"HTTP {resp.status_code}: {redact(resp.text[:300])}")
 
 
 def _openai_compatible(provider, model, key, system, user, json_mode, max_tokens, temperature) -> Result:
@@ -281,13 +539,15 @@ def _arina_record(tokens: int) -> None:
         log.warning("could not record Arina token use: %s", e)
 
 
-def arina(system: str, user: str, *, max_output_tokens: int | None = None) -> Result:
+def arina(system: str, user: str, *, max_output_tokens: int | None = None, model: str | None = None, cap: int | None = None) -> Result:
     """One Chat Completions call to the Elevate gateway (text only, no streaming). Refuses before
     sending if the team budget would be exceeded or the request is over 48 KB."""
     if not settings.arina_api_key:
         raise ArinaUnavailable("ARINA_API_KEY is not set")
-    out = min(max_output_tokens or settings.arina_max_output_tokens, settings.arina_max_output_tokens)
-    model = settings.arina_model
+    if not re.match(r"^https?://[^\s/]+", settings.arina_base_url or ""):
+        raise ArinaUnavailable("ARINA_BASE_URL is not a valid http(s) URL")
+    out = min(max_output_tokens or settings.arina_max_output_tokens, cap or settings.arina_max_output_tokens)
+    model = model or settings.arina_model
     body = {"model": model, "stream": False,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
     # DeepSeek takes max_tokens; the GPT models take max_completion_tokens (and only the default temperature).
@@ -310,7 +570,7 @@ def arina(system: str, user: str, *, max_output_tokens: int | None = None) -> Re
         _check(resp)
         d = resp.json()
     except (RateLimited, RuntimeError, httpx.HTTPError, ValueError) as e:
-        raise ArinaUnavailable(f"Arina request failed: {e}") from e
+        raise ArinaUnavailable(f"Arina request failed: {redact(e)}") from e
     choice = (d.get("choices") or [{}])[0]
     text = re.sub(r"<think>.*?</think>", "", (choice.get("message") or {}).get("content") or "", flags=re.S).strip()
     usage = d.get("usage") or {}

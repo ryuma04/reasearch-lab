@@ -75,11 +75,11 @@ def design_tests(run_id: int) -> list[str]:
         files = {"tests/claims_expected.json": json.dumps(expected, indent=2), "tests/test_claims.py": CLAIM_TESTS}
         if not (root / "tests" / "test_correctness.py").exists():
             generated = None
-            if llm.available():
+            if llm.agent_available("testing"):
                 code = "\n".join(p.read_text(encoding="utf-8")[:6000] for p in (root / "src").glob("*.py"))
                 res = llm.chat("planner", steps.instructions(slug) + " Write pytest correctness tests (no training, fast, "
                                "CPU) for this code. Import modules from src via sys.path. Output only Python code.",
-                               code, max_tokens=3000)
+                               code, max_tokens=3000, agent="testing")
                 if res and "def test_" in res.text:
                     generated = res.text.replace("```python", "").replace("```", "").strip() + "\n"
             files["tests/test_correctness.py"] = generated or SMOKE_TEST

@@ -26,6 +26,10 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     db.open_pool()
+    for a in llm.health("none")["agents"]:  # what each agent is wired to; never a key
+        logging.getLogger("lab.llm").info("AI route: %-15s -> %-7s %-28s keys=%d (%s) %s", a["agent"], a["provider"], a["model"], a["keys_configured"], a["key_source"], a["status"])
+    for issue in llm.config_issues():
+        logging.getLogger("lab.llm").warning("AI configuration: %s", issue)
     worker.start()
     yield
     worker.stop.set()
@@ -37,6 +41,17 @@ app = FastAPI(title="Research Lab Agents", version="1.0", lifespan=lifespan)
 def internal(x_internal_token: str = Header(default="")) -> None:
     if not settings.internal_token or not hmac.compare_digest(x_internal_token.encode(), settings.internal_token.encode()):
         raise HTTPException(status_code=403, detail="forbidden")
+
+
+@app.get("/ai/health")
+def ai_health(live: str = "none", x_internal_token: str = Header(default="")) -> dict:
+    """Which provider, model and keys each agent uses. live=none checks configuration only; live=auth (free authenticated
+    listing) and live=request (a tiny completion per key) call the providers, so they need the internal token."""
+    if live not in ("none", "auth", "request"):
+        raise HTTPException(status_code=400, detail="live must be none, auth or request")
+    if live != "none":
+        internal(x_internal_token)
+    return llm.health(live)
 
 
 @app.get("/health")

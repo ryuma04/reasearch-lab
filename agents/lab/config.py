@@ -63,6 +63,14 @@ class Settings:
     arina_max_output_tokens: int = 2500
     arina_reasoning_effort: str = "low"
     arina_token_budget: int = 800_000
+    arina_max_output_tokens_code: int = 6000   # coding writes whole files, so it may use more output than a debugging diagnosis
+    arina_fallback_shared: bool = False        # explicit opt-in: let Groq/Gemini answer for Arina agents when Arina fails
+
+    # Provider requests, shared by every agent.
+    ai_timeout: int = 180                      # seconds to wait for a model answer
+    ai_max_retries: int = 3                    # bounded attempts per call (rate-limit waits and transient backoff)
+    ai_backoff: float = 2.0                    # seconds, doubled per transient retry
+    ai_per_key_concurrency: int = 2            # requests in flight on one key
 
     # Hugging Face Hub publishing (official huggingface_hub client). Never logged.
     hf_token: str = ""
@@ -105,12 +113,18 @@ def load() -> Settings:
         model_fast=_get("GROQ_MODEL_FAST", "openai/gpt-oss-20b"),
         model_gemini=_get("GEMINI_MODELS", _get("GEMINI_MODEL", "gemini-3-flash-preview")).split(",")[0].strip(),
         max_repair_attempts=int(_get("MAX_REPAIR_ATTEMPTS", "3")),
-        arina_api_key=_get("ARINA_API_KEY", _get("ELEVATE_TEAM_API_KEY")),
-        arina_base_url=_get("ARINA_BASE_URL", "https://elevate1-0.vercel.app/api/ai").rstrip("/"),
-        arina_model=_get("ARINA_MODEL", "gpt-5-mini"),
+        arina_api_key=_get("ARINA_API_KEY", _get("ARENA_API_KEY", _get("ELEVATE_TEAM_API_KEY"))),
+        arina_base_url=_get("ARINA_BASE_URL", _get("ARENA_BASE_URL", "https://elevate1-0.vercel.app/api/ai")).rstrip("/"),
+        arina_model=_get("ARINA_MODEL", _get("ARENA_MODEL", "gpt-5-mini")),
         arina_max_output_tokens=int(_get("ARINA_MAX_OUTPUT_TOKENS", "2500")),
         arina_reasoning_effort=_get("ARINA_REASONING_EFFORT", "low"),
         arina_token_budget=int(_get("ARINA_TOKEN_BUDGET", "800000")),
+        arina_max_output_tokens_code=int(_get("ARINA_MAX_OUTPUT_TOKENS_CODE", "6000")),
+        arina_fallback_shared=_get("ARINA_FALLBACK_TO_SHARED", "false").lower() in ("1", "true", "yes"),
+        ai_timeout=int(_get("AI_REQUEST_TIMEOUT_SECONDS", "180")),
+        ai_max_retries=int(_get("AI_MAX_RETRIES", "3")),
+        ai_backoff=float(_get("AI_RETRY_BACKOFF_SECONDS", "2")),
+        ai_per_key_concurrency=int(_get("AI_MAX_CONCURRENCY_PER_KEY", "2")),
         hf_token=_get("HF_TOKEN"),
     )
 
