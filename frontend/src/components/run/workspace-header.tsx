@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { useParams, usePathname, useSearchParams } from "next/navigation";
 import { motion } from "motion/react";
 import { GithubLogo } from "@phosphor-icons/react";
 import { useWorkspace } from "@/lib/hooks/queries";
@@ -11,12 +11,13 @@ import { cn, formatDateTime, shortId } from "@/lib/utils";
 import { Badge, Select } from "@/components/ui/primitives";
 import { ErrorState, Skeleton } from "@/components/ui/states";
 
-/** Resolve the run this page is about: ?run=… or the workspace's latest run. */
+/** Resolve the run this page is about: ?run=…, the /run/{runId} page it is embedded in, or the workspace's latest run. */
 export function useSelectedRun(workspaceId: string) {
   const sp = useSearchParams();
+  const params = useParams<{ runId?: string }>();
   const ws = useWorkspace(workspaceId);
   const runs = ws.data?.runs ?? [];
-  const explicit = sp.get("run");
+  const explicit = sp.get("run") ?? params?.runId ?? null;
   const runId = explicit ?? runs.at(-1)?.id ?? null;
   const run = runs.find((r) => r.id === runId) ?? null;
   return { ws, runId, run, runs };

@@ -23,15 +23,15 @@ import { PlanStage } from "./plan-stage";
 import { ResearchStage } from "./research-stage";
 import { ResultsStage } from "./results-stage";
 import { StageNav } from "./stage-nav";
+import { CodingExtras, DebuggingExtras, ResultsExtras } from "./stage-extras";
 import { TestStage } from "./test-stage";
 import type { AgentInfo } from "./types";
 
 /**
- * Stages this workflow tab shows. The Research & Planning experience owns the first two; the coding, debugging, testing and
- * results components (and their backend stages) are kept untouched for the teammates building them. To expose them
- * again, add their keys here: no other change is needed.
+ * Stages this workflow tab shows: the whole run, from Research & Planning to Results. The later stages also embed the
+ * workspace's Code sandbox, Fixes, Gap Explorer, Research map, Replay and Publish views (see ./stage-extras).
  */
-export const WORKFLOW_SCOPE: StageKey[] = ["research", "plan"];
+export const WORKFLOW_SCOPE: StageKey[] = ["research", "plan", "coding", "debugging", "testing", "results"];
 const KEYS = WORKFLOW_SCOPE;
 
 /** Seconds since `from` while `live`, ticking once a second only then. */
@@ -155,10 +155,10 @@ export function WorkflowShell({ workspaceId, runId }: { workspaceId: string; run
         {stream.historyError ? <ErrorState error={stream.historyError} title="Couldn't load the run's activity" /> : null}
         {view === "research" && <ResearchStage runId={runId} events={stream.events} agents={agents} ended={ended} researchDone={wf.reached >= 1} running={wf.stages[0]?.status === "active"} onOpen={select} objective={ws.data?.note} />}
         {view === "plan" && <PlanStage runId={runId} cp={plan} canAct={canAct} agents={agents} events={stream.events} />}
-        {KEYS.includes("coding") && view === "coding" && <CodingStage runId={runId} events={stream.events} agents={agents} ended={ended} awaiting={wf.awaiting} canAct={canAct} />}
-        {KEYS.includes("debugging") && view === "debugging" && <DebugStage runId={runId} events={stream.events} agents={agents} ended={ended} failed={wf.terminal === "failed"} awaiting={wf.awaiting} canAct={canAct} />}
+        {KEYS.includes("coding") && view === "coding" && <><CodingStage runId={runId} events={stream.events} agents={agents} ended={ended} awaiting={wf.awaiting} canAct={canAct} /><CodingExtras runId={runId} runStatus={run.status} /></>}
+        {KEYS.includes("debugging") && view === "debugging" && <><DebugStage runId={runId} events={stream.events} agents={agents} ended={ended} failed={wf.terminal === "failed"} awaiting={wf.awaiting} canAct={canAct} /><DebuggingExtras runId={runId} /></>}
         {KEYS.includes("testing") && view === "testing" && <TestStage runId={runId} events={stream.events} agents={agents} ended={ended} />}
-        {KEYS.includes("results") && view === "results" && <ResultsStage run={run} workspaceId={workspaceId} events={stream.events} outcome={wf.terminal} onOpen={select} />}
+        {KEYS.includes("results") && view === "results" && <><ResultsStage run={run} workspaceId={workspaceId} events={stream.events} outcome={wf.terminal} onOpen={select} /><ResultsExtras workspaceId={workspaceId} /></>}
       </main>
     </div>
   );
