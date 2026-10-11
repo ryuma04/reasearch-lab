@@ -3,7 +3,6 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { motion } from "motion/react";
 import * as Dropdown from "@radix-ui/react-dropdown-menu";
 import { useQueryClient } from "@tanstack/react-query";
 import { Brain, GithubLogo, House, Plus, SignOut, SquaresFour, User } from "@phosphor-icons/react";
