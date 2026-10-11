@@ -20,11 +20,21 @@ export function githubLoginUrl(returnTo?: string | null): string {
 
 export const authApi = {
   me: async (signal?: AbortSignal): Promise<T.MeResponse> => A.toMe(await request(ENDPOINTS.me, { signal })),
-  logout: () => request<void>(ENDPOINTS.authLogout),
-  /** Email + password account (alongside GitHub). Sets the session cookie. */
-  register: (email: string, password: string, name?: string) =>
-    request<unknown>(ENDPOINTS.register, { body: { email, password, name } }),
-  passwordLogin: (email: string, password: string) => request<unknown>(ENDPOINTS.passwordLogin, { body: { email, password } }),
+  logout: () => {
+    if (typeof window !== "undefined") localStorage.removeItem("lab_token");
+    return request<void>(ENDPOINTS.authLogout);
+  },
+  /** Email + password account (alongside GitHub). Sets the session cookie and bearer token. */
+  register: async (email: string, password: string, name?: string) => {
+    const res = await request<{ user: unknown; token?: string }>(ENDPOINTS.register, { body: { email, password, name } });
+    if (res?.token && typeof window !== "undefined") localStorage.setItem("lab_token", res.token);
+    return res;
+  },
+  passwordLogin: async (email: string, password: string) => {
+    const res = await request<{ user: unknown; token?: string }>(ENDPOINTS.passwordLogin, { body: { email, password } });
+    if (res?.token && typeof window !== "undefined") localStorage.setItem("lab_token", res.token);
+    return res;
+  },
   /** Bearer token for MCP clients (Gemini CLI) acting as the logged-in user. */
   mcpToken: () => request<{ token: string; expires_at: string; mcp_url: string }>(ENDPOINTS.mcpToken),
   /** Pushes are part of GET /me. */

@@ -24,6 +24,10 @@ function CallbackInner() {
   React.useEffect(() => {
     const status = sp.get("status");
     const returnTo = safeReturnPath(sp.get("return_to"));
+    const token = sp.get("token");
+    if (token && typeof window !== "undefined") {
+      localStorage.setItem("lab_token", token);
+    }
     if (status === "cancelled" || sp.get("error") === "access_denied") {
       router.replace(`/login?reason=cancelled&return_to=${encodeURIComponent(returnTo)}`);
       return;

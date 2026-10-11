@@ -94,14 +94,27 @@ func (s *Service) RequireInternal(next http.Handler) http.Handler {
 
 func (s *Service) callbackURL() string { return s.cfg.PublicAPIURL + "/auth/github/callback" }
 
+func (s *Service) cookieSettings() (bool, http.SameSite) {
+	// For cross-site deployments (e.g. Vercel frontend + Render backend on https),
+	// browsers require SameSite=None and Secure=true for cross-origin fetch() with credentials.
+	isHTTPS := strings.HasPrefix(s.cfg.PublicAPIURL, "https") ||
+		strings.HasPrefix(s.cfg.FrontendURL, "https") ||
+		s.cfg.Env == "production"
+	if isHTTPS {
+		return true, http.SameSiteNoneMode
+	}
+	return false, http.SameSiteLaxMode
+}
+
 func (s *Service) setSession(w http.ResponseWriter, userID int64) (string, error) {
 	token, err := signSession(s.cfg.SessionSecret, userID, sessionTTL)
 	if err != nil {
 		return "", err
 	}
+	secure, sameSite := s.cookieSettings()
 	http.SetCookie(w, &http.Cookie{
 		Name: sessionCookie, Value: token, Path: "/", HttpOnly: true,
-		Secure: strings.HasPrefix(s.cfg.PublicAPIURL, "https"), SameSite: http.SameSiteLaxMode,
+		Secure: secure, SameSite: sameSite,
 		MaxAge: int(sessionTTL.Seconds()),
 	})
 	return token, nil
@@ -158,10 +171,11 @@ func (s *Service) Login(w http.ResponseWriter, r *http.Request) error {
 		return httpx.Errorf(http.StatusServiceUnavailable, "GitHub OAuth is not configured (set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET)")
 	}
 	state := RandomToken(24)
+	secure, sameSite := s.cookieSettings()
 	http.SetCookie(w, &http.Cookie{
 		Name: stateCookie, Value: state + "|" + s.loginTarget(r),
-		Path: "/auth/github", HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: 600,
-		Secure: strings.HasPrefix(s.cfg.PublicAPIURL, "https"),
+		Path: "/auth/github", HttpOnly: true, SameSite: sameSite, MaxAge: 600,
+		Secure: secure,
 	})
 	http.Redirect(w, r, ghapi.AuthorizeURL(s.cfg.GitHubClientID, s.callbackURL(), state, oauthScopes), http.StatusFound)
 	return nil
@@ -216,12 +230,13 @@ func (s *Service) Callback(w http.ResponseWriter, r *http.Request) error {
 	if err := s.store.SaveGitHubConnection(ctx, user.ID, enc, tr.Scope); err != nil {
 		return err
 	}
-	if _, err := s.setSession(w, user.ID); err != nil {
+	token, err := s.setSession(w, user.ID)
+	if err != nil {
 		return err
 	}
 	slog.Info("user logged in with GitHub", "user_id", user.ID, "login", ghUser.Login)
 	if strings.Contains(redirect, "/auth/callback?") {
-		redirect = strings.Replace(redirect, "/auth/callback?", "/auth/callback?status=success&", 1)
+		redirect = strings.Replace(redirect, "/auth/callback?", "/auth/callback?status=success&token="+url.QueryEscape(token)+"&", 1)
 	}
 	http.Redirect(w, r, redirect, http.StatusFound)
 	return nil
@@ -278,7 +293,8 @@ var emailRe = regexp.MustCompile(`^[^@\s]{1,64}@[^@\s]{1,190}$`)
 
 // POST /auth/logout
 func (s *Service) Logout(w http.ResponseWriter, r *http.Request) error {
-	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Path: "/", MaxAge: -1, HttpOnly: true})
+	secure, sameSite := s.cookieSettings()
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Path: "/", MaxAge: -1, HttpOnly: true, Secure: secure, SameSite: sameSite})
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
@@ -505,10 +521,11 @@ func (s *Service) Register(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if _, err := s.setSession(w, user.ID); err != nil {
+	token, err := s.setSession(w, user.ID)
+	if err != nil {
 		return err
 	}
-	httpx.JSON(w, http.StatusCreated, map[string]any{"user": user})
+	httpx.JSON(w, http.StatusCreated, map[string]any{"user": user, "token": token})
 	return nil
 }
 
@@ -534,10 +551,11 @@ func (s *Service) PasswordLogin(w http.ResponseWriter, r *http.Request) error {
 	if !CheckPassword(body.Password, hash) {
 		return invalid
 	}
-	if _, err := s.setSession(w, user.ID); err != nil {
+	token, err := s.setSession(w, user.ID)
+	if err != nil {
 		return err
 	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"user": user})
+	httpx.JSON(w, http.StatusOK, map[string]any{"user": user, "token": token})
 	return nil
 }
 

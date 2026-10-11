@@ -60,6 +60,10 @@ export async function request<T>(def: EndpointDef, opts: RequestOptions = {}): P
   const url = `${API_BASE_URL}${path}${buildQuery(opts.query)}`;
 
   const headers: Record<string, string> = { Accept: opts.responseType === "text" ? "text/plain, */*" : "application/json" };
+  if (typeof window !== "undefined") {
+    const token = localStorage.getItem("lab_token");
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+  }
   let body: BodyInit | undefined;
   if (opts.form) {
     body = opts.form;
