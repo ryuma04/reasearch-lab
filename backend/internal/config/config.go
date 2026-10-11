@@ -87,8 +87,8 @@ func Load() (*Config, error) {
 		DevLoginEnabled:   getBool("DEV_LOGIN_ENABLED", false),
 		EmailLoginEnabled: getBool("EMAIL_LOGIN_ENABLED", true),
 
-		DatabaseURL: get("DATABASE_URL", "postgres://lab:lab@localhost:5433/lab?sslmode=disable"),
-		RedisURL:    get("REDIS_URL", "redis://localhost:6379/0"),
+		DatabaseURL: strings.TrimSpace(get("DATABASE_URL", "postgres://lab:lab@localhost:5433/lab?sslmode=disable")),
+		RedisURL:    strings.TrimSpace(get("REDIS_URL", "redis://localhost:6379/0")),
 		DataDir:     get("DATA_DIR", "./data"),
 		AgentsURL:   strings.TrimRight(get("AGENTS_URL", "http://localhost:8001"), "/"),
 		RateLimits:  get("RATE_LIMITS", ""),

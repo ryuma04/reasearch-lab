@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -43,7 +44,8 @@ type Bus struct {
 }
 
 func New(ctx context.Context, url string, st *store.Store) (*Bus, error) {
-	opt, err := redis.ParseURL(url)
+	cleanURL := strings.TrimSpace(url)
+	opt, err := redis.ParseURL(cleanURL)
 	if err != nil {
 		return nil, fmt.Errorf("REDIS_URL: %w", err)
 	}
