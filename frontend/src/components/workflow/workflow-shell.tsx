@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ArrowUUpLeft, Pause, Play, Robot, Stop, Timer } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowUUpLeft, FilmSlate, Pause, Play, Robot, Stop, Timer } from "@phosphor-icons/react";
 import { userMessage } from "@/lib/api/errors";
 import { runApi } from "@/lib/api/services";
 import { qk, useAgents, useCheckpoints, useRun, useWorkspace } from "@/lib/hooks/queries";
@@ -138,6 +138,9 @@ export function WorkflowShell({ workspaceId, runId }: { workspaceId: string; run
             <Robot size={15} weight="bold" />
             MCP Assistant
           </Button>
+          <Button asChild size="sm" variant="outline" className="gap-1.5 shadow-xs">
+            <Link href={`/workspaces/${workspaceId}/video`}><FilmSlate size={15} weight="bold" /> Explainer video</Link>
+          </Button>
           {canAct && !ended && run.status === "paused" && <Button size="sm" variant="secondary" disabled={busy} onClick={() => void act("resume")}><Play size={14} weight="fill" /> Resume</Button>}
           {canAct && !ended && run.status !== "paused" && run.status !== "waiting_approval" && <Button size="sm" variant="secondary" disabled={busy} onClick={() => void act("pause")}><Pause size={14} weight="fill" /> Pause</Button>}
           {canAct && !ended && <Button size="sm" variant="outline" disabled={busy} onClick={() => void act("stop")}><Stop size={14} weight="fill" /> Stop</Button>}
@@ -168,7 +171,7 @@ export function WorkflowShell({ workspaceId, runId }: { workspaceId: string; run
         <p className="text-sm text-muted">You are looking at another stage. <button type="button" className="font-semibold text-purple-deep underline" onClick={() => select(current)}>Jump to the current stage ({stageLabel})</button></p>
       )}
 
-      <main id="stage-panel" aria-live="off" className="min-h-[50vh]" aria-label={wf.stages.find((s) => s.key === view)?.label}>
+      <main id="stage-panel" aria-live="off" className="min-h-[50vh] min-w-0 break-words" aria-label={wf.stages.find((s) => s.key === view)?.label}>
         {stream.historyError ? <ErrorState error={stream.historyError} title="Couldn't load the run's activity" /> : null}
         {view === "research" && <ResearchStage runId={runId} events={stream.events} agents={agents} ended={ended} researchDone={wf.reached >= 1} running={wf.stages[0]?.status === "active"} onOpen={select} objective={ws.data?.note} />}
         {view === "plan" && <PlanStage runId={runId} cp={plan} canAct={canAct} agents={agents} events={stream.events} />}

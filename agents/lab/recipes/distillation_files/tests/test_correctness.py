@@ -29,7 +29,8 @@ def test_soft_loss_is_zero_when_student_matches_teacher():
     z = torch.randn(8, 10)
     y = torch.randint(0, 10, (8,))
     loss = distillation_loss(z, z, y, temperature=20.0, alpha=1.0)
-    assert abs(float(loss)) < 1e-5
+    # The soft loss is scaled by T^2 = 400, so float32 rounding (~1e-8) shows up as ~1e-5; a real bug is orders larger.
+    assert abs(float(loss)) < 1e-4
 
 
 def test_parameter_counts_match_paper_architecture():

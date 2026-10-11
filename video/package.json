@@ -1,0 +1,27 @@
+{
+  "name": "paper-explainer-video",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Remotion project that renders the Paper-to-Video Explainer (called by the agent worker).",
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "render": "node render.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.527",
+    "@remotion/cli": "4.0.527",
+    "@remotion/google-fonts": "4.0.527",
+    "@remotion/renderer": "4.0.527",
+    "katex": "0.18.9",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "remotion": "4.0.527"
+  },
+  "devDependencies": {
+    "@types/katex": "^0.16.7",
+    "@types/react": "^19.1.12",
+    "typescript": "^5.9.2"
+  }
+}

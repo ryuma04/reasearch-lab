@@ -17,6 +17,7 @@ import (
 	"github.com/ryuma04/tapu-sena/backend/internal/auth"
 	"github.com/ryuma04/tapu-sena/backend/internal/bus"
 	"github.com/ryuma04/tapu-sena/backend/internal/config"
+	"github.com/ryuma04/tapu-sena/backend/internal/explainer"
 	"github.com/ryuma04/tapu-sena/backend/internal/explorer"
 	"github.com/ryuma04/tapu-sena/backend/internal/hfpublish"
 	"github.com/ryuma04/tapu-sena/backend/internal/httpx"
@@ -99,6 +100,7 @@ func run() error {
 		r.Use(auth.Require)
 
 		r.Get("/me", h(authSvc.Me))
+		r.Post("/auth/mcp-token", h(authSvc.MCPToken))
 		r.Get("/github/repos", h(authSvc.ListRepos))
 		r.Post("/github/repos", h(authSvc.CreateRepo))
 		r.Put("/github/default-repo", h(authSvc.SetDefaultRepo))
@@ -160,6 +162,8 @@ func run() error {
 		sbx.Routes(r)
 		// Hugging Face Hub publishing (upload runs in the agent worker with the official client).
 		hfpublish.New(cfg, st, b).Routes(r)
+		// Paper-to-Video Explainer (independent feature: own table; the agent worker renders the video).
+		explainer.New(cfg, st, b).Routes(r)
 		r.Post("/voice/command", h(voiceSvc.Command))
 		r.Post("/voice/text", h(voiceSvc.Text))
 	})

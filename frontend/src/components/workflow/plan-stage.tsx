@@ -19,6 +19,7 @@ import { SourceLink } from "./source-link";
 import { ImplementationPlans, planReviewOf } from "./implementation-plans";
 import { ResourceRecommendations } from "./resource-recommendations";
 import { ChangeBanner } from "@/components/versions/change-banner";
+import { ExportReportButtons } from "./report-view";
 import { useResolveCheckpoint } from "./shared";
 import type { AgentInfo } from "./types";
 
@@ -146,6 +147,14 @@ export function PlanStage({ runId, cp, canAct, agents, events }: { runId: string
       </div>
 
       <ChangeBanner runId={runId} />
+
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-line-cool bg-white p-4">
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold">Research &amp; Planning report</p>
+          <p className="text-sm text-ink-soft">The paper&apos;s claims, method and formulas, the settings with their sources and this coding plan in one document, to help you write and check the code.</p>
+        </div>
+        <ExportReportButtons runId={runId} />
+      </div>
 
       <Block n={0} title="AI-Discovered Better Resources" hint="Discovered during research and compared with your own datasets and repositories. Nothing replaces your originals unless you accept it; your decisions are passed to the planner when you approve.">
         <ResourceRecommendations runId={runId} canAct={canAct} />

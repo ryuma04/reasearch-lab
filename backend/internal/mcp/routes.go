@@ -67,14 +67,17 @@ func (s *Service) userFromCtx(ctx context.Context) (*store.User, error) {
 func (s *Service) Routes(r chi.Router) {
 	h := httpx.Handler
 
-	// Production MCP Streamable HTTP endpoint for external clients (Gemini CLI, Claude Code, Cursor)
+	// Production MCP Streamable HTTP endpoint for external clients (Gemini CLI, Claude Code, Cursor).
+	// Built once: the handler keeps the MCP sessions, so a per-request handler would forget every session
+	// created by "initialize" and answer 404 to all later calls.
+	mcpHandler := Handler(s.cfg, s.store, s.bus, s.sandbox)
 	r.HandleFunc("/mcp", func(w http.ResponseWriter, req *http.Request) {
 		u, err := s.resolveUser(req)
 		if err != nil || u == nil {
 			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 			return
 		}
-		Handler(s.cfg, s.store, s.bus, s.sandbox)(w, req.WithContext(WithUser(req.Context(), u)))
+		mcpHandler(w, req.WithContext(WithUser(req.Context(), u)))
 	})
 
 	// Assistant UI API (allows both session auth and external dev discovery)

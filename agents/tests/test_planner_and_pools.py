@@ -131,7 +131,7 @@ def test_rate_limit_rotates_to_the_other_key_of_the_same_pool(monkeypatch):
         return llm.Result("ok", 5, provider, model)
     monkeypatch.setattr(llm, "_openai_compatible", fake)
     res = llm.chat("writer", "s", "u", agent="research_a")
-    assert res and used == ["k1", "k2"] and llm._cooldown["research_a:1"] > 0
+    assert res and used == ["k1", "k2"] and max(v for k, v in llm._cooldown.items() if k.split("|")[0] == "research_a:1") > 0  # rate limits pause key+model
 
 
 def test_auth_error_pauses_the_key_and_uses_the_other_one(monkeypatch):

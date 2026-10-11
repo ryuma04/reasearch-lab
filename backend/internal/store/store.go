@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -29,8 +30,18 @@ func Open(ctx context.Context, url string) (*Store, error) {
 	var pool *pgxpool.Pool
 	var err error
 	deadline := time.Now().Add(60 * time.Second)
+	cfg, err := pgxpool.ParseConfig(url)
+	if err != nil {
+		return nil, fmt.Errorf("parse DATABASE_URL: %w", err)
+	}
+	// A pooled endpoint (Neon "-pooler", PgBouncer) hands consecutive statements to different server connections, so
+	// pgx's named prepared statements collide ("prepared statement name is already in use"). Unnamed statements with
+	// cached descriptions keep the binary protocol and types and are safe there (the agents do the same with psycopg).
+	if strings.Contains(url, "-pooler") || strings.Contains(url, "pgbouncer=true") {
+		cfg.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeCacheDescribe
+	}
 	for {
-		pool, err = pgxpool.New(ctx, url)
+		pool, err = pgxpool.NewWithConfig(ctx, cfg)
 		if err == nil {
 			if err = pool.Ping(ctx); err == nil {
 				break

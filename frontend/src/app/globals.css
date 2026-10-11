@@ -118,6 +118,13 @@
   background-size: 800px 100%;
   animation: shimmer 1.6s linear infinite;
 }
+/* Scrollable rows (tab bar, stage bar) without a visible scrollbar strip; they still scroll by wheel, touch and keyboard. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
 @utility tabular {
   font-variant-numeric: tabular-nums;
 }
@@ -125,6 +132,11 @@
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
+  }
+  /* No page-level horizontal scrollbar: wide content (tables, the stage bar, code) scrolls inside its own container.
+     clip (not hidden) keeps position: sticky working. */
+  html, body {
+    overflow-x: clip;
   }
   body {
     @apply bg-dots font-sans text-ink antialiased;

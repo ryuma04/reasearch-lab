@@ -59,6 +59,9 @@ type Config struct {
 	// HFToken is only checked for presence here (the agent worker uploads with it); never logged or sent.
 	HFToken string
 
+	// ElevenLabs keys (Paper-to-Video Explainer) are used only by the agent worker; the API checks presence.
+	ElevenLabsKeys string
+
 	// Claude and Arina AI Orchestration
 	AnthropicAPIKey string
 	ClaudeModel     string
@@ -68,6 +71,8 @@ type Config struct {
 }
 
 func (c *Config) GitHubConfigured() bool { return c.GitHubClientID != "" && c.GitHubClientSecret != "" }
+
+func (c *Config) ElevenLabsConfigured() bool { return strings.Trim(c.ElevenLabsKeys, ", ") != "" }
 
 // Load reads .env (from the working directory or up to three parents) without
 // overriding variables that are already set, then builds the Config.
@@ -115,6 +120,7 @@ func Load() (*Config, error) {
 
 		GitleaksBin:        get("GITLEAKS_BIN", "gitleaks"),
 		HFToken:            get("HF_TOKEN", ""),
+		ElevenLabsKeys:     get("ELEVENLABS_API_KEYS", "") + "," + get("ELEVENLABS_API_KEY", ""),
 
 		AnthropicAPIKey: get("ANTHROPIC_API_KEY", ""),
 		ClaudeModel:     get("CLAUDE_MODEL", "claude-3-7-sonnet-20250219"),

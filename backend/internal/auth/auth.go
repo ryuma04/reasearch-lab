@@ -107,6 +107,25 @@ func (s *Service) setSession(w http.ResponseWriter, userID int64) (string, error
 	return token, nil
 }
 
+// POST /auth/mcp-token: a bearer token for the logged-in user, for MCP clients such as the Gemini CLI
+// (Authorization: Bearer <token> on /mcp). It acts exactly as this user, with the same workspace permissions,
+// and expires with the normal session lifetime. The session cookie itself is HttpOnly and stays unreadable.
+func (s *Service) MCPToken(w http.ResponseWriter, r *http.Request) error {
+	uid := UserID(r.Context())
+	if uid == 0 {
+		return httpx.ErrUnauthorized
+	}
+	token, err := signSession(s.cfg.SessionSecret, uid, sessionTTL)
+	if err != nil {
+		return err
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{
+		"token": token, "expires_at": time.Now().Add(sessionTTL).UTC().Format(time.RFC3339),
+		"mcp_url": strings.TrimRight(s.cfg.PublicAPIURL, "/") + "/mcp",
+	})
+	return nil
+}
+
 // safeRedirect only allows redirects back to our own frontend.
 func (s *Service) safeRedirect(target string) string {
 	if target != "" && strings.HasPrefix(target, s.cfg.FrontendURL+"/") {

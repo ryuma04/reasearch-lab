@@ -25,6 +25,8 @@ export const authApi = {
   register: (email: string, password: string, name?: string) =>
     request<unknown>(ENDPOINTS.register, { body: { email, password, name } }),
   passwordLogin: (email: string, password: string) => request<unknown>(ENDPOINTS.passwordLogin, { body: { email, password } }),
+  /** Bearer token for MCP clients (Gemini CLI) acting as the logged-in user. */
+  mcpToken: () => request<{ token: string; expires_at: string; mcp_url: string }>(ENDPOINTS.mcpToken),
   /** Pushes are part of GET /me. */
   myPushes: async (signal?: AbortSignal): Promise<T.Push[]> => A.toMe(await request(ENDPOINTS.me, { signal })).pushes,
 };
@@ -66,8 +68,19 @@ export const versionApi = {
     ((await request(ENDPOINTS.changeOfRun, { params: { id: runId }, signal })) as { change: T.ChangeRequestInfo | null } | undefined)?.change ?? null,
   versions: async (runId: string, signal?: AbortSignal): Promise<T.VersionInfo[]> =>
     ((await request(ENDPOINTS.versions, { params: { id: runId }, signal })) as { versions: T.VersionInfo[] } | undefined)?.versions ?? [],
-  compare: async (oldRunId: string, newRunId: string, signal?: AbortSignal): Promise<T.CompareResult> =>
-    (await request(ENDPOINTS.compare, { params: { id: oldRunId }, query: { with: newRunId }, signal })) as T.CompareResult,
+  compare: async (oldRunId: string, newRunId: string, signal?: AbortSignal): Promise<T.CompareResult> => {
+    const c = (await request(ENDPOINTS.compare, { params: { id: oldRunId }, query: { with: newRunId }, signal })) as T.CompareResult;
+    // Go encodes empty lists and maps as null (e.g. two versions with no file changes): normalise once here.
+    return {
+      ...c,
+      files: c.files ?? [],
+      skipped: c.skipped ?? {},
+      metrics: c.metrics ?? [],
+      scorecard: { old: c.scorecard?.old ?? {}, new: c.scorecard?.new ?? {} },
+      plan: { added: c.plan?.added ?? [], removed: c.plan?.removed ?? [] },
+      note: c.note ?? "",
+    };
+  },
   paper: async (runId: string, signal?: AbortSignal): Promise<T.PaperState> => {
     const r = (await request(ENDPOINTS.paper, { params: { id: runId }, signal })) as Partial<T.PaperState> | undefined;
     return { status: r?.status ?? "none", run_id: r?.run_id ?? Number(runId), error: r?.error, stale: r?.stale, sections: r?.sections ?? [], manifest: r?.manifest ?? null };
@@ -75,6 +88,22 @@ export const versionApi = {
   generatePaper: async (runId: string): Promise<void> => {
     await request<unknown>(ENDPOINTS.generatePaper, { params: { id: runId } });
   },
+};
+
+/* ── Paper-to-Video Explainer ── */
+
+export const explainerApi = {
+  voices: async (signal?: AbortSignal) =>
+    (await request(ENDPOINTS.explainerVoices, { signal })) as { voices: T.ExplainerVoice[]; default: string; configured: boolean },
+  list: async (workspaceId: string, signal?: AbortSignal): Promise<T.ExplainerVideo[]> =>
+    unwrapList<T.ExplainerVideo>(await request(ENDPOINTS.explainerList, { params: { id: workspaceId }, signal }), "videos"),
+  get: async (videoId: number, signal?: AbortSignal): Promise<T.ExplainerVideo> =>
+    (await request(ENDPOINTS.explainerGet, { params: { videoId: String(videoId) }, signal })) as T.ExplainerVideo,
+  create: async (workspaceId: string, body: { upload_id: number; voice_id?: string; fresh_script?: boolean }) =>
+    (await request(ENDPOINTS.explainerCreate, { params: { id: workspaceId }, body })) as { id: number; queued: boolean },
+  remove: (videoId: number) => request<void>(ENDPOINTS.explainerDelete, { params: { videoId: String(videoId) } }),
+  videoUrl: (videoId: number, download = false) => apiUrl(ENDPOINTS.explainerVideo, { videoId: String(videoId) }, download ? { download: 1 } : undefined),
+  assetUrl: (videoId: number, path: string) => apiUrl(ENDPOINTS.explainerAsset, { videoId: String(videoId) }, { path }),
 };
 
 /* ── Workspaces ── */

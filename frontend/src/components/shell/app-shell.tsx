@@ -42,19 +42,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <header className="sticky top-0 z-40 border-b border-ink/5 bg-canvas-cool/85 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6">
           <Logo href="/dashboard" />
-          <nav className="hidden items-center gap-1 rounded-full bg-white p-1 shadow-clay-sm md:flex" aria-label="Main">
-            {NAV.map(({ href, label, Icon }) => {
-              const on = active(href);
-              return (
-                <Link key={href} href={href} aria-current={on ? "page" : undefined}
-                  className={cn("relative inline-flex h-10 items-center gap-2 rounded-full px-4 text-sm font-semibold transition-colors", on ? "text-white" : "text-ink-soft hover:text-ink")}>
-                  {on && <motion.span layoutId="nav-pill" className="absolute inset-0 rounded-full bg-pill" transition={{ type: "spring", stiffness: 400, damping: 32 }} />}
-                  <Icon size={18} weight={on ? "fill" : "regular"} className="relative" />
-                  <span className="relative">{label}</span>
-                </Link>
-              );
-            })}
-          </nav>
+
           <div className="flex items-center gap-2">
             <Button asChild size="sm" variant="purple" className="hidden sm:inline-flex">
               <Link href="/workspaces/new"><Plus size={16} weight="bold" /> New workspace</Link>

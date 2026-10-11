@@ -171,7 +171,7 @@ def test_one_agents_exhausted_pool_never_borrows_another_agents_keys(calls):
 def test_a_rate_limited_primary_rotates_to_the_secondary(calls):
     calls.script = {"ra1": llm.RateLimited(30)}
     assert llm.invoke("research_a", "s", "u").provider == "groq"
-    assert calls.keys() == ["ra1", "ra2"] and llm._cooldown["research_a:1"] > llm.time.time()
+    assert calls.keys() == ["ra1", "ra2"] and max(v for k, v in llm._cooldown.items() if k.split("|")[0] == "research_a:1") > llm.time.time()  # rate limits pause key+model
     calls.log.clear()
     assert llm.invoke("research_a", "s", "u") is not None
     assert calls.keys() == ["ra2"]  # the limited key is not used again while paused

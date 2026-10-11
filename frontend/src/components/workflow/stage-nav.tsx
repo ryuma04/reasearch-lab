@@ -22,7 +22,7 @@ const SR: Record<StageStatus, string> = {
 /** The persistent stage progression. Locked stages cannot be opened until their prerequisites are met. */
 export function StageNav({ stages, view, current, onSelect }: { stages: StageInfo[]; view: StageKey; current: StageKey; onSelect: (k: StageKey) => void }) {
   return (
-    <nav aria-label="Workflow stages" className="-mx-1 overflow-x-auto pb-1">
+    <nav aria-label="Workflow stages" className="no-scrollbar -mx-1 overflow-x-auto pb-1">
       <ol className="flex min-w-max items-stretch gap-1.5 px-1">
         {stages.map((s, i) => {
           const m = ICON[s.status];

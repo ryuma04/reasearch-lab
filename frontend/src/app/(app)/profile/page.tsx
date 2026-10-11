@@ -10,6 +10,7 @@ import { USE_MOCKS } from "@/lib/config";
 import { pushStatusMeta } from "@/lib/status";
 import { formatDateTime } from "@/lib/utils";
 import { Avatar } from "@/components/shell/app-shell";
+import { McpConnectCard } from "@/components/assistant/mcp-connect";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, Field, Input, SectionTitle } from "@/components/ui/primitives";
 import { EmptyState, ErrorState, SkeletonList } from "@/components/ui/states";
@@ -58,6 +59,7 @@ export default function ProfilePage() {
   return (
     <div className="space-y-8">
       <SectionTitle kicker="Account" title="Profile & GitHub" />
+      <McpConnectCard />
 
       <div className="grid gap-5 lg:grid-cols-[1fr_1.4fr]">
         <Card className="p-6">

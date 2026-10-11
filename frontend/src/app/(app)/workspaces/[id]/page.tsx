@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { QRCodeSVG } from "qrcode.react";
-import { FilePdf, LinkSimple, Database, GithubLogo, Play, ShareNetwork, Plus } from "@phosphor-icons/react";
+import { FilePdf, FilmSlate, LinkSimple, Database, GithubLogo, Play, ShareNetwork, Plus } from "@phosphor-icons/react";
 import { runApi, workspaceApi } from "@/lib/api/services";
 import { userMessage } from "@/lib/api/errors";
 import type { ShareLink } from "@/lib/api/types";
@@ -106,6 +106,13 @@ export default function WorkspaceOverview() {
               <Button variant="outline" loading={shareM.isPending} onClick={() => shareM.mutate()}><ShareNetwork size={18} weight="bold" /> Create link</Button>
             </div>
           )}
+        </Card>
+        <Card className="p-6">
+          <SectionTitle title="Explainer video" kicker="Paper → Video" />
+          <p className="mt-2 text-sm text-muted">Turn the uploaded paper into a 3–5 minute video: Tapu explains the problem, method and results with the paper&apos;s own figures and equations. Works right after upload, no run needed.</p>
+          <Button asChild variant="purple" size="sm" className="mt-4">
+            <Link href={`/workspaces/${id}/video`}><FilmSlate size={16} weight="bold" /> Make the explainer video</Link>
+          </Button>
         </Card>
         <Card variant="soft" tone="lavender" className="p-6">
           <p className="font-display text-base font-bold">Quick links</p>

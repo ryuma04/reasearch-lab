@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 
 from . import api, bus, db, llm, memory, recipes, steps
 from .config import settings as cfg
@@ -41,6 +42,28 @@ CONTRACT = __doc__.split("Contract for every generated project (also given to th
 # (e.g. the CUDA build of torch from PyPI), so pins on these are removed before installing.
 PREINSTALLED = {"torch", "torchvision", "numpy", "pandas", "scikit-learn", "sklearn", "xgboost", "scipy",
                 "matplotlib", "pytest", "pyyaml", "tqdm", "requests"}
+
+
+REQ_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*(\[[A-Za-z0-9,._-]+\])?\s*([<>=!~].*)?$")
+
+
+def clean_requirements(text: str, files: dict[str, str]) -> tuple[str, list[str]]:
+    """Drop lines pip cannot or must not install: the project's own folders and modules ("src", "utils"), local paths,
+    editable installs and anything that is not a package spec. An AI writer sometimes lists them, and pip then fails
+    with "Could not build wheels for src"."""
+    local = {"src", "tests", "configs", "results", "models", "data"}
+    local |= {p.rsplit("/", 1)[-1][:-3].lower() for p in files if p.endswith(".py")}
+    out, dropped = [], []
+    for line in text.splitlines():
+        s = line.split("#", 1)[0].strip()
+        if not s:
+            continue
+        name = re.split(r"[<>=!~\[ ;]", s, maxsplit=1)[0].lower()
+        if s.startswith(("-e", ".", "/", "file:")) or "\\" in s or name in local or not REQ_NAME_RE.match(s):
+            dropped.append(s)
+            continue
+        out.append(PIP_NAMES.get(name, s) if name in PIP_NAMES and name == s.lower() else s)
+    return "\n".join(out) + "\n", dropped
 
 
 def unpin_preinstalled(text: str) -> tuple[str, list[str]]:
@@ -175,6 +198,10 @@ def write_code(run_id: int, brief: dict) -> dict:
         else:
             raise NoCodeSource()
         if "requirements.txt" in files:
+            files["requirements.txt"], dropped = clean_requirements(files["requirements.txt"], files)
+            if dropped:
+                bus.emit(run_id, slug, "progress", "Removed from requirements.txt (not installable packages): " + ", ".join(dropped),
+                         "The project's own folders and local paths are not pip packages")
             files["requirements.txt"], unpinned = unpin_preinstalled(files["requirements.txt"])
             if unpinned:
                 bus.emit(run_id, slug, "progress", "Using the sandbox's pre-installed versions of: " + ", ".join(unpinned),
@@ -199,21 +226,109 @@ class NoCodeSource(Exception):
                 "paper, so code cannot be written automatically.")
 
 
+FENCE_RE = re.compile(r"^\s*```[\w.+-]*\s*\n(.*?)\n\s*```\s*$", re.S)
+SAFE_PATH_RE = re.compile(r"^(?:src|tests)/[A-Za-z0-9_./-]+\.py$|^requirements\.txt$")
+
+
 def _llm_write(run_id: int, brief: dict, slug: str) -> dict[str, str]:
+    """The AI Code Writer. The Arina gateway caps each answer at 4000 tokens (hidden reasoning included), which is too
+    little for a whole project in one JSON answer, so the writer plans the file list first and then writes one file per
+    call, each call seeing the files already written. Other providers first try the whole project in one answer."""
     paper = brief["papers"][0]
     settings_ = load_settings(run_id)
     extra = "\n".join(bus.instructions(run_id, "coding"))
-    data, _ = llm.invoke_json("coding",
-        steps.instructions(slug) + "\nYou write complete, runnable Python projects for CPU. Follow this contract exactly:\n"
-        + CONTRACT + '\nReturn JSON {"files": {"path": "content"}, "notes": "..."}. Do not include configs/config.yaml '
-        "(it is generated from the settings). Use only settings names given. Keep training small enough for a laptop CPU.",
-        json.dumps({"paper": {k: paper.get(k) for k in ("title", "summary", "method", "claims", "missing_details")},
-                    "settings": [{"name": s["name"], "value": s["value"]} for s in settings_],
-                    "metric_names_required": [c["metric_name"] for c in paper.get("claims", [])],
-                    "field": paper.get("field", ""), "researcher_instructions": extra}, default=str),
-        max_tokens=8000)
-    files = (data or {}).get("files") if isinstance(data, dict) else None
-    return {k: v for k, v in (files or {}).items() if isinstance(v, str) and k != "configs/config.yaml"}
+    system = (steps.instructions(slug) + "\nYou write complete, runnable Python projects for CPU. Follow this contract exactly:\n"
+              + CONTRACT + "\nDo not write configs/config.yaml (it is generated from the settings). Use only the settings names "
+              "given. Keep training small enough for a laptop CPU.")
+    context = json.dumps({"paper": {k: paper.get(k) for k in ("title", "summary", "method", "claims", "missing_details")},
+                          "settings": [{"name": s["name"], "value": s["value"]} for s in settings_],
+                          "metric_names_required": [c["metric_name"] for c in paper.get("claims", [])],
+                          "field": paper.get("field", ""), "researcher_instructions": extra}, default=str)
+
+    if llm.AGENTS["coding"].provider != "arina":
+        data, _ = llm.invoke_json("coding", system + '\nReturn JSON {"files": {"path": "content"}, "notes": "..."}.', context, max_tokens=8000)
+        files = (data or {}).get("files") if isinstance(data, dict) else None
+        files = {k: v for k, v in (files or {}).items() if isinstance(v, str) and k != "configs/config.yaml"}
+        if files:
+            return files
+
+    # 1. plan the files (small answer)
+    plan = None
+    for attempt in range(3):
+        plan, _ = llm.invoke_json("coding", system + "\nFirst only PLAN the project. Return JSON "
+                                  '{"files": [{"path": "src/train.py", "purpose": "..."}], "notes": "..."} with 3 to 5 files: '
+                                  "src/train.py, at most two helper modules in src/, one test file in tests/, and requirements.txt. "
+                                  "Keep each file under 150 lines.", context, max_tokens=2500)
+        wait = re.search(r"rate limited, retry after (\d+(?:\.\d+)?)", llm.last_error() or "")
+        if plan is not None or not wait or attempt == 2:
+            break
+        bus.check_control(run_id)
+        time.sleep(min(90.0, float(wait.group(1)) + 1))
+    planned = [f for f in ((plan or {}).get("files") or []) if isinstance(f, dict) and SAFE_PATH_RE.match(str(f.get("path", "")))]
+    if not any(f["path"] == "src/train.py" for f in planned):
+        planned.insert(0, {"path": "src/train.py", "purpose": "reads the config, trains, evaluates and writes results/metrics.json"})
+    if not any(f["path"] == "requirements.txt" for f in planned):
+        planned.append({"path": "requirements.txt", "purpose": "package names, one per line"})
+    planned = planned[:7]
+    # helpers first so train.py and the tests can import what really exists
+    planned.sort(key=lambda f: (f["path"] == "requirements.txt", f["path"].startswith("tests/"), f["path"] == "src/train.py"))
+    layout = "\n".join(f"- {f['path']}: {f.get('purpose', '')}" for f in planned)
+    bus.emit(run_id, slug, "progress", f"Planned {len(planned)} files: " + ", ".join(f["path"] for f in planned),
+             "The code writer answers in parts small enough for the model gateway, one file at a time")
+
+    # 2. one file per call; minimal hidden reasoning so the 4000-token answer is spent on the file itself
+    files: dict[str, str] = {}
+    effort = llm.gateway_reasoning.set("minimal")
+    try:
+        _write_files(run_id, slug, system, context, planned, layout, files)
+        # A helper that could not be written must not be imported: rewrite train.py once as a self-contained file.
+        missing = [f["path"] for f in planned if f["path"] not in files and f["path"].startswith("src/") and f["path"] != "src/train.py"]
+        mods = [p[len("src/"):-3].replace("/", ".") for p in missing]
+        train = files.get("src/train.py", "")
+        if train and any(re.search(rf"^\s*(?:from|import)\s+(?:src\.)?{re.escape(m)}\b", train, re.M) for m in mods):
+            bus.emit(run_id, slug, "progress", "Rewriting src/train.py without " + ", ".join(missing), "That helper file could not be written")
+            files.pop("src/train.py")
+            _write_files(run_id, slug, system + f"\nThese planned files do NOT exist: {', '.join(missing)}. Do not import them; "
+                         "put what they would contain inside this file.", context,
+                         [f for f in planned if f["path"] == "src/train.py"], layout, files)
+    finally:
+        llm.gateway_reasoning.reset(effort)
+    if "src/train.py" not in files:
+        return {}  # nothing runnable; the caller reports the failure
+    return files
+
+
+def _write_files(run_id: int, slug: str, system: str, context: str, planned: list[dict], layout: str, files: dict[str, str]) -> None:
+    for f in planned:
+        written = "\n\n".join(f"### {p}\n{c[:6000]}" for p, c in files.items())[:24000]
+        res = None
+        shorter = ""
+        for attempt in range(4):
+            res = llm.invoke("coding", system + f"\nThe project has these files:\n{layout}\n\nWrite ONLY the complete content of "
+                             f"{f['path']} ({f.get('purpose', '')}). Reply with the file content only: no explanations, no JSON.{shorter}",
+                             context + ("\n\nFILES ALREADY WRITTEN (import from these, keep names consistent):\n" + written if written else ""),
+                             max_tokens=4000)
+            if res is not None or attempt == 3:
+                break
+            err = llm.last_error() or ""
+            wait = re.search(r"rate limited, retry after (\d+(?:\.\d+)?)", err)
+            if wait:  # the gateway rate-limits bursts ("retry after 60s"): wait and try again
+                bus.check_control(run_id)
+                bus.emit(run_id, slug, "progress", f"The model gateway asked to wait {float(wait.group(1)):.0f} s before writing {f['path']}",
+                         "Rate limit of the shared hackathon gateway; the run continues by itself")
+                time.sleep(min(90.0, float(wait.group(1)) + 1))
+            elif "finish_reason=length" in err and not shorter:  # the answer did not fit: ask once for a compact file
+                shorter = " The previous answer was too long: keep this file under 120 lines, no comments or docstrings."
+            else:
+                break
+        text = (res.text if res else "").strip()
+        m = FENCE_RE.match(text)
+        if m:
+            text = m.group(1)
+        if text:
+            files[f["path"]] = text.rstrip() + "\n"
+        else:
+            log.warning("code writer: no content for %s (%s)", f["path"], llm.last_error())
 
 
 # ---------- Code Reviewer (before running) ----------

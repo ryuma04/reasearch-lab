@@ -23,8 +23,8 @@ type MemoryGetRecordIn struct {
 type MemoryStoreIn struct {
 	RunID   *int64         `json:"run_id,omitempty"`
 	Kind    string         `json:"kind" jsonschema:"error_fix | setting | experiment | agent_skill | paper_recipe"`
-	Title   string         `json:"title"`
-	Content map[string]any `json:"content"`
+	Title   string         `json:"title" jsonschema:"the lesson, in one sentence (stored as the memory text)"`
+	Content map[string]any `json:"content,omitempty" jsonschema:"optional structured details"`
 }
 
 func (s *Server) handleMemorySearch(ctx context.Context, in MemorySearchIn) (any, error) {
@@ -38,7 +38,7 @@ func (s *Server) handleMemorySearch(ctx context.Context, in MemorySearchIn) (any
 	}
 
 	query := `
-		SELECT id, kind, title, content, run_id, created_at
+		SELECT id, kind, text, details, source_run_id, created_at
 		FROM memory_items
 		WHERE 1=1`
 	args := []any{}
@@ -50,12 +50,12 @@ func (s *Server) handleMemorySearch(ctx context.Context, in MemorySearchIn) (any
 		idx++
 	}
 	if q != "" {
-		query += fmt.Sprintf(" AND (lower(title) LIKE '%%' || lower($%d) || '%%' OR lower(content::text) LIKE '%%' || lower($%d) || '%%')", idx, idx)
+		query += fmt.Sprintf(" AND (lower(text) LIKE '%%' || lower($%d) || '%%' OR lower(details::text) LIKE '%%' || lower($%d) || '%%')", idx, idx)
 		args = append(args, q)
 		idx++
 	}
 
-	query += fmt.Sprintf(" ORDER BY id DESC LIMIT $%d", idx)
+	query += fmt.Sprintf(" ORDER BY success_rate DESC, id DESC LIMIT $%d", idx)
 	args = append(args, limit)
 
 	rows, err := s.store.Pool.Query(ctx, query, args...)
@@ -67,18 +67,22 @@ func (s *Server) handleMemorySearch(ctx context.Context, in MemorySearchIn) (any
 	type MemoryItem struct {
 		ID        int64           `json:"id"`
 		Kind      string          `json:"kind"`
-		Title     string          `json:"title"`
-		Content   json.RawMessage `json:"content"`
-		RunID     *int64          `json:"run_id"`
+		Title     string          `json:"text"`
+		Content   json.RawMessage `json:"details"`
+		RunID     *int64          `json:"source_run_id"`
 		CreatedAt any             `json:"created_at"`
 	}
 
 	items := make([]MemoryItem, 0)
 	for rows.Next() {
 		var it MemoryItem
-		if rows.Scan(&it.ID, &it.Kind, &it.Title, &it.Content, &it.RunID, &it.CreatedAt) == nil {
-			items = append(items, it)
+		if err := rows.Scan(&it.ID, &it.Kind, &it.Title, &it.Content, &it.RunID, &it.CreatedAt); err != nil {
+			return nil, fmt.Errorf("memory search failed: %w", err)
 		}
+		items = append(items, it)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("memory search failed: %w", err)
 	}
 
 	return map[string]any{
@@ -97,7 +101,7 @@ func (s *Server) handleMemoryGetRecord(ctx context.Context, in MemoryGetRecordIn
 	var createdAt any
 
 	err := s.store.Pool.QueryRow(ctx, `
-		SELECT id, kind, title, content, run_id, created_at
+		SELECT id, kind, text, details, source_run_id, created_at
 		FROM memory_items
 		WHERE id = $1`, in.ID).Scan(&id, &kind, &title, &content, &runID, &createdAt)
 	if err != nil {
@@ -107,9 +111,9 @@ func (s *Server) handleMemoryGetRecord(ctx context.Context, in MemoryGetRecordIn
 	return map[string]any{
 		"id":         id,
 		"kind":       kind,
-		"title":      title,
-		"content":    content,
-		"run_id":     runID,
+		"text":          title,
+		"details":       content,
+		"source_run_id": runID,
 		"created_at": createdAt,
 	}, nil
 }
@@ -138,9 +142,9 @@ func (s *Server) handleMemoryStore(ctx context.Context, in MemoryStoreIn) (any, 
 
 	var newID int64
 	err = s.store.Pool.QueryRow(ctx, `
-		INSERT INTO memory_items (kind, title, content, run_id, user_id)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id`, kind, title, contentBytes, in.RunID, s.user.ID).Scan(&newID)
+		INSERT INTO memory_items (kind, text, details, source_run_id)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id`, kind, title, contentBytes, in.RunID).Scan(&newID)
 	if err != nil {
 		return nil, fmt.Errorf("failed saving to memory: %w", err)
 	}

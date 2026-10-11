@@ -31,9 +31,9 @@ const TABS = [
   { seg: "/explorer", label: "Gap Explorer" },
   { seg: "/sandbox", label: "Code sandbox" },
   { seg: "/results/research", label: "Results", match: "/results" },
-  { seg: "/replay", label: "Replay" },
   { seg: "/compare", label: "Versions" },
   { seg: "/paper", label: "Paper" },
+  { seg: "/video", label: "Explainer video" },
   { seg: "/publish", label: "Publish" },
 ];
 
@@ -43,6 +43,11 @@ export function WorkspaceHeader({ id }: { id: string }) {
   const { ws, runId, runs } = useSelectedRun(id);
   const base = `/workspaces/${id}`;
   const q = runId ? `?run=${encodeURIComponent(runId)}` : "";
+  const navRef = React.useRef<HTMLElement>(null);
+  // The tab bar scrolls sideways on narrow screens: keep the open tab visible.
+  React.useEffect(() => {
+    navRef.current?.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [pathname, ws.isPending]);
 
   if (ws.isPending) return <Skeleton className="h-28" />;
   if (ws.error) return <ErrorState error={ws.error} title="Couldn't open this workspace" onRetry={() => void ws.refetch()} />;
@@ -51,6 +56,21 @@ export function WorkspaceHeader({ id }: { id: string }) {
 
   return (
     <div className="space-y-4">
+      <nav ref={navRef} className="no-scrollbar -mx-1 flex gap-1 overflow-x-auto rounded-full bg-white p-1 shadow-clay-sm" aria-label="Workspace sections">
+        {TABS.filter((t) => !t.seg.includes(":run") || runId).map((t) => {
+          const isFlow = t.seg.includes(":run");
+          const href = `${base}${isFlow ? t.seg.replace(":run", encodeURIComponent(runId ?? "")) : t.seg}`;
+          const on = t.match ? pathname.startsWith(`${base}${t.match}`) : pathname === href;
+          return (
+            <Link key={t.seg} href={isFlow ? href : `${href}${q}`} aria-current={on ? "page" : undefined}
+              className={cn("relative inline-flex h-9 shrink-0 items-center rounded-full px-4 text-sm font-semibold", on ? "text-white" : "text-ink-soft hover:text-ink")}>
+              {on && <motion.span layoutId="ws-tab" className="absolute inset-0 rounded-full bg-pill" transition={{ type: "spring", stiffness: 400, damping: 32 }} />}
+              <span className="relative">{t.label}</span>
+            </Link>
+          );
+        })}
+      </nav>
+
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-bold uppercase tracking-[0.14em] text-purple-deep">Workspace · {budgetLabel(w.compute_budget)} budget</p>
@@ -81,21 +101,6 @@ export function WorkspaceHeader({ id }: { id: string }) {
           )}
         </div>
       </div>
-
-      <nav className="-mx-1 flex gap-1 overflow-x-auto rounded-full bg-white p-1 shadow-clay-sm" aria-label="Workspace sections">
-        {TABS.filter((t) => !t.seg.includes(":run") || runId).map((t) => {
-          const isFlow = t.seg.includes(":run");
-          const href = `${base}${isFlow ? t.seg.replace(":run", encodeURIComponent(runId ?? "")) : t.seg}`;
-          const on = t.match ? pathname.startsWith(`${base}${t.match}`) : pathname === href;
-          return (
-            <Link key={t.seg} href={isFlow ? href : `${href}${q}`} aria-current={on ? "page" : undefined}
-              className={cn("relative inline-flex h-9 shrink-0 items-center rounded-full px-4 text-sm font-semibold", on ? "text-white" : "text-ink-soft hover:text-ink")}>
-              {on && <motion.span layoutId="ws-tab" className="absolute inset-0 rounded-full bg-pill" transition={{ type: "spring", stiffness: 400, damping: 32 }} />}
-              <span className="relative">{t.label}</span>
-            </Link>
-          );
-        })}
-      </nav>
     </div>
   );
 }

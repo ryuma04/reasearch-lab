@@ -1,6 +1,7 @@
 """Job worker: consumes lab:jobs from Redis (pushed by the Go API) and runs them in threads.
 
-Job types: start_run, resume (after a checkpoint), retry, whatif, heal (Self-Healing Debugger).
+Job types: start_run, resume (after a checkpoint), retry, whatif, heal (Self-Healing Debugger),
+explorer, paper, hf_publish, explainer_video (Paper-to-Video Explainer).
 
 Delivery is at-least-once: a job is atomically moved from lab:jobs to lab:jobs:processing
 (BLMOVE) and removed only after it has been handled. Jobs left in the processing list by a
@@ -120,6 +121,9 @@ class Worker:
             elif typ == "paper":  # research-paper materials for one version
                 from . import paper
                 paper.generate(run_id)
+            elif typ == "explainer_video":  # Paper-to-Video Explainer (independent of runs)
+                from .explainer import pipeline as explainer_pipeline
+                explainer_pipeline.run(int(job["video_id"]))
             elif typ == "hf_publish":  # Publish to Hugging Face
                 from . import hfpublish
                 hfpublish.publish(int(job["publication_id"]))
@@ -158,8 +162,11 @@ class Worker:
             if outcome == "rejected":
                 db.ex("UPDATE runs SET status='rejected', finished_at=now() WHERE id=%s", (run_id,))
             elif outcome == "failed":
-                db.ex("UPDATE runs SET status='failed', error='stopped after asking the researcher for help', finished_at=now() WHERE id=%s", (run_id,))
-                bus.emit(run_id, "system", "run_failed", "The run stopped: the researcher chose not to continue", "")
+                # n_finalize already marked the run failed with the real reason (e.g. required tests failed);
+                # only a declined help checkpoint ends here without a recorded reason.
+                if db.ex("UPDATE runs SET status='failed', error='stopped after asking the researcher for help', finished_at=now() "
+                         "WHERE id=%s AND status <> 'failed'", (run_id,)):
+                    bus.emit(run_id, "system", "run_failed", "The run stopped: the researcher chose not to continue", "")
 
         self._guard(run_id, go, main=True)
 

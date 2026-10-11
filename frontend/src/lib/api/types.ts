@@ -942,3 +942,60 @@ export interface MCPToolDef {
   group: string;
   parameters?: Record<string, unknown>;
 }
+
+/* ── Paper-to-Video Explainer ── */
+
+export type ExplainerStatus = "queued" | "extracting" | "scripting" | "voicing" | "rendering" | "ready" | "failed";
+
+export interface ExplainerScene {
+  kind: "intro" | "problem" | "method" | "equation" | "result" | "conclusion";
+  kicker: string;
+  heading: string;
+  narration: string;
+  pose: string;
+  expression: string;
+  figure_id: string | null;
+  equation_id: string | null;
+  points: { text: string }[];
+  quotes: { text: string; page: number }[];
+}
+
+export interface ExplainerReport {
+  source?: string;
+  route?: string;
+  word_count?: number;
+  scene_count?: number;
+  verified_quotes?: number;
+  repair_rounds?: number;
+  removed_sentences?: { scene: number; sentence: string; unverified_numbers: string[] }[];
+  removed_points?: { scene: number; text: string }[];
+  removed_quotes?: { scene: number; text: string }[];
+  issues_left?: string[];
+  script_cached?: boolean;
+  duration_seconds?: number;
+  tts?: { voice_id: string; model_id: string; characters_billed: number; clips_from_cache: number; clips: number };
+}
+
+export interface ExplainerVideo {
+  id: number;
+  workspace_id: number;
+  upload_id: number | null;
+  paper_title: string;
+  status: ExplainerStatus;
+  progress: number;
+  message: string;
+  voice_id: string;
+  script?: { title: string; authors: string; scenes: ExplainerScene[] } | Record<string, never> | null;
+  report?: ExplainerReport | null;
+  has_video: boolean;
+  duration_seconds: number;
+  error: string;
+  created_at: ISODate;
+  updated_at: ISODate;
+}
+
+export interface ExplainerVoice {
+  id: string;
+  name: string;
+  description: string;
+}

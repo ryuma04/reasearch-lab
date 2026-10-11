@@ -76,6 +76,27 @@ func (srv *Server) BuildMCPServer() *mcp.Server {
 		KeepAlive:                  30 * time.Second,
 		KeepAliveFailureThreshold: 3,
 	})
+	// Every tool call is checked against the caller's role in the workspace it touches (see authz.go).
+	s.AddReceivingMiddleware(srv.authzMiddleware)
+
+	// 0. Discovery: the caller's workspaces, papers and run ids
+	addTool(s, &mcp.Tool{Name: "lab_list_workspaces", Description: "List the workspaces you can access with their papers and runs (run_id, status). Start here to find the run_id the other tools need."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in LabListWorkspacesIn) (*mcp.CallToolResult, Out, error) {
+			res, err := srv.handleLabListWorkspaces(ctx, in)
+			if err != nil {
+				return nil, Out{}, err
+			}
+			return ok(res)
+		})
+
+	addTool(s, &mcp.Tool{Name: "lab_start_run", Description: "Start the agent team (paper reading, planning, coding, Docker sandbox runs, tests) on a workspace that has a paper. Same as the Start run button in the app; returns the run_id and the app link to watch it live."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in LabStartRunIn) (*mcp.CallToolResult, Out, error) {
+			res, err := srv.handleLabStartRun(ctx, in)
+			if err != nil {
+				return nil, Out{}, err
+			}
+			return ok(res)
+		})
 
 	// 1. Research Papers
 	addTool(s, &mcp.Tool{Name: "paper_upload_or_link", Description: "Upload a local research paper PDF or link an arXiv paper (e.g. https://arxiv.org/abs/1706.03762) into a reproduction workspace."},

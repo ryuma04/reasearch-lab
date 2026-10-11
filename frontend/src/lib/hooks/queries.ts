@@ -2,7 +2,7 @@
 
 import { useQuery, type UseQueryOptions } from "@tanstack/react-query";
 import { isApiError } from "@/lib/api/errors";
-import { assistantApi, authApi, githubApi, memoryApi, resourceApi, runApi, sandboxApi, shareApi, teamApi, versionApi, workspaceApi } from "@/lib/api/services";
+import { assistantApi, authApi, explainerApi, githubApi, memoryApi, resourceApi, runApi, sandboxApi, shareApi, teamApi, versionApi, workspaceApi } from "@/lib/api/services";
 import type { SandboxExecution } from "@/lib/api/types";
 
 const isLive = (e?: SandboxExecution | null) => e?.status === "running" || e?.status === "queued";
@@ -117,6 +117,24 @@ export const useVersions = (id: string | null) =>
   useQuery({ queryKey: qk.versions(id ?? ""), queryFn: ({ signal }) => versionApi.versions(id!, signal), enabled: !!id });
 export const useChangeOfRun = (id: string | null) =>
   useQuery({ queryKey: qk.changeOfRun(id ?? ""), queryFn: ({ signal }) => versionApi.changeOfRun(id!, signal), enabled: !!id });
+const explainerBusy = (s?: string) => !!s && s !== "ready" && s !== "failed";
+/** Paper-to-Video Explainer: the workspace's videos (polls while one is being made) and one video in detail. */
+export const useExplainerVideos = (workspaceId: string) =>
+  useQuery({
+    queryKey: ["workspace", workspaceId, "explainer"] as const,
+    queryFn: ({ signal }) => explainerApi.list(workspaceId, signal),
+    refetchInterval: (q) => (q.state.data?.some((v) => explainerBusy(v.status)) ? 2000 : false),
+  });
+export const useExplainerVideo = (videoId: number | null) =>
+  useQuery({
+    queryKey: ["explainer", videoId ?? 0] as const,
+    queryFn: ({ signal }) => explainerApi.get(videoId!, signal),
+    enabled: !!videoId,
+    refetchInterval: (q) => (!q.state.data || explainerBusy(q.state.data.status) ? 1500 : false),
+  });
+export const useExplainerVoices = () =>
+  useQuery({ queryKey: ["explainer", "voices"] as const, queryFn: ({ signal }) => explainerApi.voices(signal), staleTime: 3_600_000 });
+
 export const usePaper = (id: string | null) =>
   useQuery({
     queryKey: qk.paper(id ?? ""), queryFn: ({ signal }) => versionApi.paper(id!, signal), enabled: !!id,

@@ -24,6 +24,11 @@ log = logging.getLogger("lab.llm")
 
 # Tokens used by the agent task currently running in this thread/context (for the reward loop).
 current_tokens: contextvars.ContextVar[list[int] | None] = contextvars.ContextVar("current_tokens", default=None)
+# Gemini 3 thinking level for calls made in this context (None = the model's default).
+gemini_thinking: contextvars.ContextVar[str | None] = contextvars.ContextVar("gemini_thinking", default=None)
+# Arina (GPT-5) reasoning effort for calls made in this context (None = ARINA_REASONING_EFFORT). The gateway caps each
+# answer at 4000 tokens including hidden reasoning, so long answers (whole code files) need "minimal".
+gateway_reasoning: contextvars.ContextVar[str | None] = contextvars.ContextVar("gateway_reasoning", default=None)
 
 _http = httpx.Client(timeout=httpx.Timeout(20.0, read=float(settings.ai_timeout)))
 
@@ -50,6 +55,9 @@ AGENTS: dict[str, Route] = {
     "debugging": Route("arina", "planner", model_env="ARINA_MODEL_DEBUGGING", purpose="Code Reviewer and Debugger"),
     "testing": Route("groq", "planner", "GROQ_TESTING_API_KEY", purpose="Test design"),
     "final_synthesis": Route("groq", "writer", "GROQ_FINAL_SYNTHESIS_API_KEY", purpose="Plain-language explanation of measured results"),
+    "explainer": Route("gemini", "planner", "GEMINI_EXPLAINER_KEY", purpose="Paper-to-Video Explainer: scene script from the paper"),
+    "explainer_fallback": Route("groq", "planner", "GROQ_EXPLAINER_KEY", purpose="Paper-to-Video Explainer: script from a condensed paper when Gemini is unavailable"),
+    "explainer_arina": Route("arina", "planner", model_env="ARINA_MODEL_EXPLAINER", purpose="Paper-to-Video Explainer: last script writer when Gemini and Groq are unavailable"),
 }
 # Calls without an agent (small decisions such as intent classification) use the shared chain (Groq, then Gemini, then OpenRouter).
 
@@ -234,7 +242,9 @@ def _try_chain(role, system, user, json_mode, max_tokens, temperature, agent=Non
         _record(agent, AGENTS[agent].provider if agent else "none", "-", 0, False, time.time(), "not_configured")
         return None
     for provider, model, key, label in chain:
-        remaining = _cooldown.get(label, 0) - time.time()
+        # A rejected key pauses the whole key; a rate limit pauses only that model on that key
+        # (Gemini quotas are per model, so another model on the same key may still answer).
+        remaining = max(_cooldown.get(label, 0), _cooldown.get(f"{label}|{model}", 0)) - time.time()
         if remaining > 0:
             kinds.add("rate_limited")
             waits.append(remaining)
@@ -254,7 +264,7 @@ def _try_chain(role, system, user, json_mode, max_tokens, temperature, agent=Non
                 else:
                     res = _openai_compatible(provider, model, key, system, user, json_mode, max_tokens, temperature)
         except RateLimited as e:
-            _cooldown[label] = time.time() + e.retry_after
+            _cooldown[f"{label}|{model}"] = time.time() + e.retry_after
             waits.append(e.retry_after)
             kinds.add("rate_limited")
             log.warning("%s:%s rate limited by the provider for %.0fs", label, model, e.retry_after)
@@ -459,6 +469,14 @@ def _check(resp: httpx.Response) -> None:
             ra = float(resp.headers.get("retry-after", "30"))
         except ValueError:
             ra = 30.0
+        # Gemini states the real wait in the body (RetryInfo.retryDelay "653s") and whether the quota is per day.
+        # A daily quota does not come back in 30 s: pause that model for an hour so callers move on at once.
+        body = resp.text[:4000]
+        m = re.search(r'"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"', body)
+        if m:
+            ra = max(ra, float(m.group(1)))
+        if re.search(r"PerDay|per day|daily", body, re.I):
+            ra = max(ra, 3600.0)
         raise RateLimited(min(max(ra, 5.0), 3600.0))
     if resp.status_code >= 400:
         raise RuntimeError(f"HTTP {resp.status_code}: {redact(resp.text[:300])}")
@@ -491,6 +509,8 @@ def _openai_compatible(provider, model, key, system, user, json_mode, max_tokens
 def _gemini(model, key, system, user, json_mode, max_tokens, temperature) -> Result:
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     gen = {"maxOutputTokens": max_tokens + 8192, "temperature": temperature}  # thinking models need headroom
+    if gemini_thinking.get():  # a caller that needs a long answer more than long reasoning (e.g. the video script)
+        gen["thinkingConfig"] = {"thinkingLevel": gemini_thinking.get()}
     if json_mode:
         gen["responseMimeType"] = "application/json"
     body = {
@@ -512,6 +532,8 @@ def _gemini(model, key, system, user, json_mode, max_tokens, temperature) -> Res
 # ---------- Arina AI (Elevate gateway): the Self-Healing Debugger's model ----------
 
 ARINA_MAX_REQUEST_BYTES = 48 * 1024  # gateway limit
+# Gateway limit on max_completion_tokens ("must be between 1 and 4000"); override if the gateway changes it.
+ARINA_GATEWAY_MAX_OUTPUT = int(os.environ.get("ARINA_GATEWAY_MAX_OUTPUT_TOKENS", "4000") or 4000)
 ARINA_USED_KEY = "lab:arina:tokens_used"
 
 
@@ -547,13 +569,16 @@ def arina(system: str, user: str, *, max_output_tokens: int | None = None, model
     if not re.match(r"^https?://[^\s/]+", settings.arina_base_url or ""):
         raise ArinaUnavailable("ARINA_BASE_URL is not a valid http(s) URL")
     out = min(max_output_tokens or settings.arina_max_output_tokens, cap or settings.arina_max_output_tokens)
+    # The gateway rejects (HTTP 400) any max_completion_tokens above its limit, which used to fail every code-writing call.
+    out = max(1, min(out, ARINA_GATEWAY_MAX_OUTPUT))
     model = model or settings.arina_model
     body = {"model": model, "stream": False,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
     # DeepSeek takes max_tokens; the GPT models take max_completion_tokens (and only the default temperature).
     body["max_tokens" if model.startswith("deepseek") else "max_completion_tokens"] = out
-    if model.startswith("gpt-5") and settings.arina_reasoning_effort:
-        body["reasoning_effort"] = settings.arina_reasoning_effort  # hidden reasoning also uses output tokens
+    effort = gateway_reasoning.get() or settings.arina_reasoning_effort
+    if model.startswith("gpt-5") and effort:
+        body["reasoning_effort"] = effort  # hidden reasoning also uses output tokens
     raw = json.dumps(body).encode()
     if len(raw) > ARINA_MAX_REQUEST_BYTES:
         raise ArinaUnavailable(f"request is {len(raw)} bytes, over the gateway's 48 KB limit")

@@ -37,6 +37,7 @@ export const ENDPOINTS = {
   register: e("register", "POST", "/auth/register", "documented"),
   passwordLogin: e("passwordLogin", "POST", "/auth/login", "documented"),
   me: e("me", "GET", "/me", "documented"),
+  mcpToken: e("mcpToken", "POST", "/auth/mcp-token", "documented"),
 
   // GitHub
   listRepos: e("listRepos", "GET", "/github/repos", "documented"),
@@ -122,6 +123,15 @@ export const ENDPOINTS = {
   sharedEvents: e("sharedEvents", "GET", "/share/{token}/runs/{runId}/events", "documented"),
   sharedStream: e("sharedStream", "GET", "/share/{token}/runs/{runId}/stream", "documented"),
   sharedScorecard: e("sharedScorecard", "GET", "/share/{token}/runs/{runId}/scorecard", "documented"),
+
+  // Paper-to-Video Explainer
+  explainerVoices: e("explainerVoices", "GET", "/explainer/voices", "documented"),
+  explainerList: e("explainerList", "GET", "/workspaces/{id}/explainer", "documented"),
+  explainerCreate: e("explainerCreate", "POST", "/workspaces/{id}/explainer", "documented"),
+  explainerGet: e("explainerGet", "GET", "/explainer/{videoId}", "documented"),
+  explainerVideo: e("explainerVideo", "GET", "/explainer/{videoId}/video", "documented"),
+  explainerAsset: e("explainerAsset", "GET", "/explainer/{videoId}/asset", "documented"),
+  explainerDelete: e("explainerDelete", "DELETE", "/explainer/{videoId}", "documented"),
 
   // Model Context Protocol (MCP) & Assistant
   assistantTools: e("assistantTools", "GET", "/assistant/tools", "documented"),
