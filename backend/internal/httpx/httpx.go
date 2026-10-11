@@ -77,14 +77,24 @@ func IDParam(r *http.Request, name string) (int64, error) {
 
 // CORS allows the configured frontend origin with credentials (cookies).
 func CORS(allowedOrigins ...string) func(http.Handler) http.Handler {
-	allowed := map[string]bool{}
-	for _, o := range allowedOrigins {
-		allowed[strings.TrimRight(o, "/")] = true
+	allowed := map[string]bool{
+		"https://tapu-sena.vercel.app": true,
+		"http://localhost:3000":       true,
+		"http://localhost:3001":       true,
+	}
+	for _, raw := range allowedOrigins {
+		for _, o := range strings.Split(raw, ",") {
+			o = strings.TrimSpace(strings.TrimRight(o, "/"))
+			if o != "" {
+				allowed[o] = true
+			}
+		}
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			origin := r.Header.Get("Origin")
-			if origin != "" && allowed[origin] {
+			origin := strings.TrimRight(r.Header.Get("Origin"), "/")
+			isAllowed := origin != "" && (allowed[origin] || strings.HasSuffix(origin, ".vercel.app"))
+			if isAllowed {
 				h := w.Header()
 				h.Set("Access-Control-Allow-Origin", origin)
 				h.Set("Access-Control-Allow-Credentials", "true")
